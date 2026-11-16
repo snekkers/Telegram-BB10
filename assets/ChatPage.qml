@@ -5,6 +5,27 @@ Page {
     objectName: "chatPage"
     property bool liveChat: false
     property int scrollSerial: _live.scrollSerial
+    onLiveChatChanged: {
+        if (liveChat && messageField) {
+            messageField.text = _live.draftText;
+            messageField.requestFocus();
+        }
+    }
+    shortcuts: [
+        SystemShortcut {
+            type: SystemShortcuts.JumpToBottom
+            onTriggered: messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.Default)
+        },
+        SystemShortcut {
+            type: SystemShortcuts.JumpToTop
+            onTriggered: messageList.scrollToPosition(ScrollPosition.Beginning, ScrollAnimation.Default)
+        },
+        Shortcut {
+            key: "r"
+            enabled: chatPage.liveChat && !messageField.focused && _live.canLoadHistory
+            onTriggered: _live.loadMoreHistory()
+        }
+    ]
     onScrollSerialChanged: {
         if (liveChat && messageList) messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.None);
     }
@@ -14,6 +35,13 @@ Page {
         if (accepted) {
             messageField.text = "";
             messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.Default);
+            messageField.requestFocus();
+        }
+    }
+    function nextUnread() {
+        var id = _live.nextUnreadChat();
+        if (id.length > 0 && _live.openChat(id)) {
+            messageField.text = _live.draftText;
             messageField.requestFocus();
         }
     }
@@ -32,6 +60,17 @@ Page {
             title: qsTr("Вниз")
             ActionBar.placement: ActionBarPlacement.OnBar
             onTriggered: messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.Default)
+        },
+        ActionItem {
+            title: qsTr("Следующий непрочитанный")
+            enabled: chatPage.liveChat && _live.ready
+            onTriggered: chatPage.nextUnread()
+            shortcuts: [ Shortcut { key: "Alt+u" } ]
+        },
+        ActionItem {
+            title: qsTr("Отметить прочитанным")
+            enabled: chatPage.liveChat && _live.ready
+            onTriggered: _live.markRead()
         }
     ]
 
@@ -58,6 +97,8 @@ Page {
         ListView {
             id: messageList
             objectName: "messageList"
+            function downloadMedia(id) { _live.downloadMedia(id); }
+            function openMedia(id) { _live.openMedia(id); }
             dataModel: chatPage.liveChat ? _live.messages : _chat.messages
             layoutProperties: StackLayoutProperties {
                 spaceQuota: 1
@@ -72,6 +113,7 @@ Page {
                     type: "message"
 
                     Container {
+                        id: messageItem
                         leftPadding: ui.du(2)
                         rightPadding: ui.du(2)
                         topPadding: ui.du(1.5)
@@ -99,6 +141,23 @@ Page {
                             textFormat: TextFormat.Plain
                             textStyle.base: SystemDefaults.TextStyles.SmallText
                             horizontalAlignment: HorizontalAlignment.Right
+                        }
+                        ImageView {
+                            visible: ListItemData.media !== undefined && ListItemData.media.kind === "photo" && ListItemData.media.localUrl.length > 0
+                            imageSource: visible ? ListItemData.media.localUrl : ""
+                            preferredWidth: ui.du(45)
+                            preferredHeight: ui.du(35)
+                            scalingMethod: ScalingMethod.AspectFit
+                            accessibility.name: qsTr("Фото из сообщения")
+                        }
+                        Button {
+                            visible: ListItemData.media !== undefined && ListItemData.media.fileId !== undefined
+                            enabled: visible && !ListItemData.media.downloading
+                            text: visible && ListItemData.media.path.length > 0 ? qsTr("Открыть вложение") : qsTr("Скачать вложение")
+                            onClicked: {
+                                if (ListItemData.media.path.length > 0) messageItem.ListItem.view.openMedia(ListItemData.messageId);
+                                else messageItem.ListItem.view.downloadMedia(ListItemData.messageId);
+                            }
                         }
                         Label {
                             visible: ListItemData.edited === true
@@ -133,6 +192,9 @@ Page {
                 objectName: "messageField"
                 hintText: chatPage.liveChat ? _live.composerHint : qsTr("Демонстрационное сообщение")
                 enabled: !chatPage.liveChat || _live.canSend
+                onTextChanged: {
+                    if (chatPage.liveChat) _live.setDraft(text);
+                }
                 layoutProperties: StackLayoutProperties {
                     spaceQuota: 1
                 }

@@ -6,3 +6,5 @@ CONFIG -= app_bundle
 INCLUDEPATH += ../src
 SOURCES += store-tests.cpp ../src/TelegramSession.cpp ../src/TelegramStore.cpp ../src/JsonCodec.cpp
 HEADERS += ../src/TelegramSession.hpp ../src/TelegramStore.hpp ../src/JsonCodec.hpp
+SOURCES += ../src/PrivateFile.cpp
+HEADERS += ../src/PrivateFile.hpp

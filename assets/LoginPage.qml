@@ -54,7 +54,7 @@ Page {
             Container {
                 visible: phase === "parameters"
                 Label {
-                    text: qsTr("Нужны ваши api_id и api_hash из API development tools на my.telegram.org. Они вводятся при каждом запуске движка.")
+                    text: qsTr("Нужны ваши api_id и api_hash из API development tools на my.telegram.org. Их можно сохранить на устройстве.")
                     multiline: true
                 }
                 Label {
@@ -69,6 +69,25 @@ Page {
                     inputMode: TextFieldInputMode.NumbersAndPunctuation
                     input.flags: TextInputFlag.AutoCorrectionOff | TextInputFlag.PredictionOff | TextInputFlag.AutoCapitalizationOff
                 }
+                CheckBox {
+                    id: rememberApi
+                    text: qsTr("Сохранить параметры API на устройстве")
+                    checked: true
+                    enabled: !_telegram.busy
+                }
+                Button {
+                    visible: _telegram.hasSavedConfiguration
+                    enabled: !_telegram.busy
+                    text: qsTr("Продолжить с сохранёнными параметрами")
+                    horizontalAlignment: HorizontalAlignment.Fill
+                    onClicked: _telegram.useSavedConfiguration()
+                }
+                Button {
+                    visible: _telegram.hasSavedConfiguration
+                    enabled: !_telegram.busy
+                    text: qsTr("Удалить сохранённые параметры API")
+                    onClicked: _telegram.forgetConfiguration()
+                }
                 TextField {
                     id: apiHash
                     hintText: "api_hash"
@@ -81,7 +100,10 @@ Page {
                     enabled: !_telegram.busy && apiId.text.length > 0 && apiHash.text.length === 32
                     horizontalAlignment: HorizontalAlignment.Fill
                     onClicked: {
-                        if (_telegram.configure(apiId.text, apiHash.text)) apiHash.text = "";
+                        var accepted = rememberApi.checked
+                            ? _telegram.configureAndRemember(apiId.text, apiHash.text)
+                            : _telegram.configure(apiId.text, apiHash.text);
+                        if (accepted) apiHash.text = "";
                     }
                 }
             }
@@ -128,6 +150,7 @@ Page {
                 onClicked: {
                     credential.text = "";
                     apiHash.text = "";
+                    _live.flushDrafts();
                     _telegram.stop();
                 }
             }

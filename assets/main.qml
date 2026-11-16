@@ -3,11 +3,38 @@ import bb.cascades 1.3
 NavigationPane {
     id: navigation
     property bool live: _live.ready
+    function openChatById(chatId) {
+        var source = navigation.live ? _live : _chat;
+        if (source.openChat(chatId)) {
+            var chatPage = chatPageDefinition.createObject();
+            if (chatPage) {
+                chatPage.liveChat = navigation.live;
+                navigation.push(chatPage);
+            } else source.closeChat();
+        }
+    }
 
     Page {
         titleBar: TitleBar {
             title: "Berrygram"
         }
+        shortcuts: [
+            SystemShortcut {
+                type: SystemShortcuts.Search
+                enabled: navigation.live
+                onTriggered: chatSearch.requestFocus()
+            },
+            Shortcut {
+                key: "s"
+                enabled: navigation.live && !chatSearch.focused
+                onTriggered: chatSearch.requestFocus()
+            },
+            Shortcut {
+                key: "u"
+                enabled: navigation.live && !chatSearch.focused
+                onTriggered: navigation.openChatById(_live.nextUnreadChat())
+            }
+        ]
         actions: [
             ActionItem {
                 title: _live.ready ? qsTr("Сессия Telegram") : qsTr("Вход в Telegram")
@@ -28,6 +55,13 @@ NavigationPane {
                 horizontalAlignment: HorizontalAlignment.Center
                 topMargin: ui.du(2)
                 bottomMargin: ui.du(1)
+            }
+            TextField {
+                id: chatSearch
+                visible: navigation.live
+                hintText: qsTr("Поиск по загруженным чатам · S")
+                inputMode: TextFieldInputMode.Text
+                onTextChanged: _live.setSearchQuery(text)
             }
 
             Label {
@@ -64,16 +98,7 @@ NavigationPane {
 
                 onTriggered: {
                     var row = dataModel.data(indexPath);
-                    var source = navigation.live ? _live : _chat;
-                    if (source.openChat(row.chatId)) {
-                        var chatPage = chatPageDefinition.createObject();
-                        if (chatPage) {
-                            chatPage.liveChat = navigation.live;
-                            navigation.push(chatPage);
-                        } else {
-                            source.closeChat();
-                        }
-                    }
+                    navigation.openChatById(row.chatId);
                 }
             }
             Label {

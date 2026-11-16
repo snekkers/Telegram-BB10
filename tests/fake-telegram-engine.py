@@ -50,7 +50,7 @@ for line in sys.stdin:
         assert len(base64.b64decode(query["database_encryption_key"])) == 32
         assert Path(query["database_directory"]).parent == Path(query["files_directory"]).parent
         assert query["use_test_dc"] is False
-        assert query["use_message_database"] is False
+        assert query["use_message_database"] is True
         assert query["use_secret_chats"] is False
         if scenario == "email":
             state("WaitEmailAddress")

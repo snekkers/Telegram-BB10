@@ -1,4 +1,7 @@
 #include "TelegramController.hpp"
+#include <bb/system/InvokeRequest>
+#include <bb/system/FileTransferMode>
+#include <QUrl>
 
 TelegramController::TelegramController(TelegramStore *store, QObject *parent)
     : QObject(parent), m_store(store), m_chats(new bb::cascades::ArrayDataModel(this)),
@@ -39,3 +42,15 @@ void TelegramController::reconcile(bb::cascades::ArrayDataModel *model, const QV
 void TelegramController::updateChats() { reconcile(m_chats, m_store->chats(), "chatId"); }
 void TelegramController::updateMessages() { reconcile(m_messages, m_store->messages(), "messageKey"); }
 void TelegramController::scroll() { ++m_scrollSerial; emit changed(); }
+
+bool TelegramController::openMedia(const QString &id)
+{
+    const QString path = m_store->mediaPath(id);
+    if (path.isEmpty()) return false;
+    bb::system::InvokeRequest request;
+    request.setAction("bb.action.OPEN");
+    request.setUri(QUrl::fromLocalFile(path));
+    request.setMimeType(m_store->mediaMime(id));
+    request.setFileTransferMode(bb::system::FileTransferMode::CopyReadOnly);
+    return m_invoke.invoke(request) != 0;
+}

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Berrygram · стенд M1</title>
+  <link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script>
+</head>
+<body>
+  <header><div><strong>Berrygram</strong><span class="tag">стенд на Mac</span></div><span id="connection">Локальный клиент</span></header>
+  <main>
+    <p id="fixture" class="fixture" hidden>Тестовые данные · соединения с Telegram нет</p>
+    <section id="auth" class="card">
+      <p class="eyebrow">TELEGRAM · TDLib <span id="version"></span></p>
+      <h1>Проверяем клиент до появления Classic</h1>
+      <p class="muted">Здесь работают те же классы авторизации и переписки, что в BB10-сборке. Это диагностический интерфейс для Mac.</p>
+      <p id="status" role="status"></p><p id="auth-error" class="error" role="alert"></p>
+      <button id="start">Запустить движок</button>
+      <form id="api-form" hidden autocomplete="off">
+        <p>Параметры вашего приложения из <span class="mono">my.telegram.org → API development tools</span>.</p>
+        <label>API ID<input id="api-id" inputmode="numeric" required autocomplete="off"></label>
+        <label>API hash<input id="api-hash" type="password" minlength="32" maxlength="32" required autocomplete="off"></label>
+        <label class="check"><input id="remember" type="checkbox" checked>Сохранить параметры API на этом Mac</label>
+        <p class="small muted">Параметры хранятся в закрытом каталоге приложения. Пароли и коды входа не сохраняются.</p>
+        <div class="row"><button type="submit">Подключиться</button><button type="button" id="saved" class="secondary" hidden>Использовать сохранённые</button></div>
+      </form>
+      <form id="credential-form" hidden autocomplete="off">
+        <label id="credential-label">Подтверждение<input id="credential" type="password" autocomplete="off" required></label>
+        <button type="submit">Продолжить</button>
+      </form>
+      <div class="row"><button id="stop" class="secondary" hidden>Остановить движок</button><button id="forget" class="text" hidden>Удалить параметры API</button></div>
+      <p class="small muted">Движок подключится к Telegram после ввода параметров. Остановка сохраняет сессию на этом Mac.</p>
+    </section>
+    <section id="client" class="workspace" hidden>
+      <aside>
+        <div class="sidebar-head"><h2>Чаты</h2><button id="next-unread" class="text">Непрочитанные</button></div>
+        <label class="search-label">Поиск по загруженным чатам<input id="search" type="search" placeholder="Название чата · ⌘F" autocomplete="off"></label>
+        <div id="chats" role="list"></div>
+        <button id="more-chats" class="secondary full">Загрузить ещё</button>
+      </aside>
+      <section class="conversation">
+        <div class="chat-head"><div><h2 id="chat-title">Выберите чат</h2><span id="chat-hint" class="small muted">Переписка появится здесь</span></div><div class="row"><button id="mark-read" class="text" disabled>Прочитано</button><button id="history" class="secondary" disabled>Ранее</button></div></div>
+        <p id="chat-error" class="error" role="alert"></p>
+        <div id="messages" aria-live="polite"><p class="empty">Выберите переписку в списке слева.</p></div>
+        <div class="composer"><button id="recover" class="text" hidden>Вернуть неотправленный текст</button><form id="send-form"><textarea id="draft" aria-label="Сообщение" placeholder="Сообщение Telegram" maxlength="4096" rows="2" disabled></textarea><button id="send" type="submit" disabled>Отправить</button></form><p class="small muted">Enter — отправить · Shift+Enter — новая строка · ⌘F — поиск</p></div>
+      </section>
+    </section>
+  </main>
+  <footer><span id="local-error" role="alert"></span><span>Локальный стенд · 127.0.0.1 · 0.4.0</span></footer>
+</body>
+</html>

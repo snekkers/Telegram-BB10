@@ -2,6 +2,7 @@
 """Synthetic TDLib peer: list/history races and send outcomes, no network."""
 import json
 import sys
+import base64
 from pathlib import Path
 
 assert Path(sys.argv[sys.argv.index("--library") + 1]).is_file()
@@ -12,7 +13,14 @@ hold_next_history = False
 held_history = []
 held_sends = []
 sent_count = 0
+last_only_local = False
 last_send = None
+library_path = Path(sys.argv[sys.argv.index("--library") + 1])
+
+def media_file(completed=False, path=""):
+    return {"@type": "file", "id": 7, "size": 68, "expected_size": 68,
+            "local": {"path": path, "is_downloading_completed": completed, "is_downloading_active": False,
+                      "downloaded_size": 68 if completed else 0}}
 
 
 def send(value):
@@ -47,13 +55,16 @@ def chat(cid, title, order, can_send=True):
 
 
 def history(query):
+    global last_only_local
     cid, start = query["chat_id"], query["from_message_id"]
     assert isinstance(cid, int) and isinstance(start, int), "int53 requests must be JSON numbers"
-    assert query["limit"] == 50 and query["only_local"] is False
+    assert query["limit"] == 50 and isinstance(query["only_local"], bool)
+    last_only_local = query["only_local"]
     if cid == A:
         if start == 0:
             photo = message(20)
-            photo["content"] = {"@type": "messagePhoto", "caption": {"text": "Подпись фото"}}
+            photo["content"] = {"@type": "messagePhoto", "caption": {"text": "Подпись фото"},
+                "photo": {"sizes": [{"type": "m", "width": 1, "height": 1, "photo": media_file()}]}}
             rows = [message(30), photo, message(10)]
         elif start == 10:
             rows = [message(10), message(5)]
@@ -94,6 +105,30 @@ for line in sys.stdin:
     elif kind in ("openChat", "closeChat"):
         assert query["chat_id"] in (A, B, C) and isinstance(query["chat_id"], int)
         reply(query)
+    elif kind == "setChatDraftMessage":
+        assert query["chat_id"] in (A, B, C)
+        draft = query["draft_message"]
+        if draft is not None:
+            assert draft["content"]["@type"] == "draftMessageContentText"
+            assert draft["content"]["text"]["@type"] == "formattedText"
+        send({"@type": "updateChatDraftMessage", "chat_id": query["chat_id"],
+              "draft_message": draft, "positions": positions(9223372036854775806)})
+        reply(query)
+    elif kind == "viewMessages":
+        assert query["source"] == {"@type": "messageSourceChatHistory"} and query["force_read"] is True
+        assert query["message_ids"]
+        send({"@type": "updateChatReadInbox", "chat_id": query["chat_id"],
+              "last_read_inbox_message_id": query["message_ids"][-1], "unread_count": 0})
+        reply(query)
+    elif kind == "downloadFile":
+        assert query["file_id"] == 7 and query["limit"] == 50 * 1024 * 1024 and query["synchronous"] is False
+        directory = library_path.parent / "private/files"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / "photo.png"
+        path.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII="))
+        value = media_file(True, str(path))
+        send({"@type": "updateFile", "file": value})
+        reply(query, kind="file", **{k: v for k, v in value.items() if k != "@type"})
     elif kind == "getChatHistory":
         if hold_next_history:
             hold_next_history = False
@@ -160,7 +195,7 @@ for line in sys.stdin:
             held_sends.clear()
         else:
             assert op == "stats", op
-        reply(query, "fixtureStats", send_count=sent_count)
+        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local)
     else:
         raise AssertionError(kind)
 

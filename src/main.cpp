@@ -7,6 +7,7 @@
 #include <bb/cascades/Application>
 #include <bb/cascades/QmlDocument>
 #include <QDebug>
+#include <QCoreApplication>
 #include <cstdlib>
 
 Q_DECL_EXPORT int main(int argc, char **argv)
@@ -16,6 +17,7 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     TelegramSession telegram;
     TelegramStore store(&telegram);
     TelegramController telegramController(&store);
+    QObject::connect(QCoreApplication::instance(), SIGNAL(aboutToQuit()), &store, SLOT(flushDrafts()));
 
     bb::cascades::QmlDocument *document =
         bb::cascades::QmlDocument::create("asset:///main.qml").parent(&app);

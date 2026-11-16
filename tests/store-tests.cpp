@@ -71,6 +71,55 @@ private:
     }
 
 private slots:
+    void draftRestoreAndSearchLoadedChats() {
+        Peer peer; ready(peer); open(peer);
+        const QString draft = QString::fromUtf8("  Черновик 😀\nстрока 2  ");
+        peer.store.setDraft(draft); peer.store.flushDrafts();
+        QTest::qWait(100);
+        QCOMPARE(peer.store.draftText(), draft);
+        peer.store.closeChat(); open(peer, B); QVERIFY(peer.store.draftText().isEmpty());
+        open(peer, A); QCOMPARE(peer.store.draftText(), draft);
+        peer.store.setSearchQuery(QString::fromUtf8("личНОЕ"));
+        QCOMPARE(peer.store.chats().size(), 1);
+        QCOMPARE(peer.store.chats().first().toMap().value("chatId").toString(), B);
+        QCOMPARE(peer.store.nextUnreadChat(), B);
+        peer.store.setSearchQuery(QString()); QCOMPARE(peer.store.chats().size(), 3);
+        QVERIFY(peer.store.sendText(draft)); QTRY_VERIFY(!peer.store.sendBusy());
+        QCOMPARE(peer.store.draftText(), QString());
+    }
+
+    void cachedHistoryWhenNetworkIsUnavailable() {
+        Peer peer; ready(peer); open(peer);
+        QVariantMap event = object("updateConnectionState"); event.insert("state", object("connectionStateWaitingForNetwork"));
+        QVERIFY(!control(peer, "emit", event).isEmpty());
+        peer.store.loadMoreHistory(); QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(control(peer, "stats").value("last_only_local").toBool());
+        event.insert("state", object("connectionStateReady")); QVERIFY(!control(peer, "emit", event).isEmpty());
+        peer.store.loadMoreHistory(); QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(!control(peer, "stats").value("last_only_local").toBool());
+    }
+
+    void unreadNavigationCyclesAndReadIsExplicit() {
+        Peer peer; ready(peer); open(peer, A);
+        QCOMPARE(peer.store.nextUnreadChat(), B);
+        open(peer, B); QCOMPARE(peer.store.nextUnreadChat(), C);
+        open(peer, C); QCOMPARE(peer.store.nextUnreadChat(), A);
+        QVERIFY(peer.store.markRead());
+        QTRY_COMPARE(peer.store.chats().last().toMap().value("unreadCount").toInt(), 0);
+        open(peer, B); QCOMPARE(peer.store.nextUnreadChat(), A);
+    }
+
+    void mediaDownloadIsScopedToPrivateFiles() {
+        Peer peer; ready(peer); open(peer);
+        QVERIFY(peer.store.downloadMedia("20"));
+        QTRY_VERIFY(!peer.store.mediaPath("20").isEmpty());
+        QVERIFY(peer.store.mediaPath("20").startsWith(peer.directory.path() + "/private/files/"));
+        QCOMPARE(peer.store.mediaMime("20"), QString("image/jpeg"));
+        QVERIFY(!peer.store.downloadMedia("999999"));
+        QFile image(peer.store.mediaPath("20")); QVERIFY(image.remove());
+        QVERIFY(QFile::link(peer.library, peer.directory.path() + "/private/files/photo.png"));
+        QVERIFY(peer.store.mediaPath("20").isEmpty());
+    }
     void listOrderIdsAndPagination() {
         Peer peer; ready(peer);
         QCOMPARE(peer.store.chats().at(0).toMap().value("chatId").toString(), A);

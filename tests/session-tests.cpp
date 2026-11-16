@@ -1,5 +1,6 @@
 #include "TelegramSession.hpp"
 #include "JsonCodec.hpp"
+#include "PrivateFile.hpp"
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
@@ -24,6 +25,37 @@ private:
         QVERIFY(!session.configure("12345", QString(32, 'a')));
     }
 private slots:
+    void rememberedApiSurvivesRestartAndCanBeRemoved() {
+        QTemporaryDir directory;
+        QString library = directory.path() + "/libtdjson.so", data = directory.path() + "/private";
+        fixture(library, "full");
+        TelegramSession session(engine(), library, data);
+        session.start(); QTRY_COMPARE(session.phase(), QString("parameters"));
+        QVERIFY(session.configureAndRemember("12345", QString(32, 'a')));
+        QTRY_COMPARE(session.phase(), QString("phone"));
+        QVERIFY(session.hasSavedConfiguration()); QCOMPARE(session.savedApiId(), QString("12345"));
+        QFile api(data + "/api.json");
+        QCOMPARE(api.permissions() & (QFile::ReadGroup | QFile::ReadOther | QFile::WriteGroup | QFile::WriteOther), QFile::Permissions());
+        session.stop(); QTRY_COMPARE(session.phase(), QString("stopped"));
+        session.start(); QTRY_COMPARE(session.phase(), QString("parameters"));
+        QVERIFY(session.useSavedConfiguration()); QTRY_COMPARE(session.phase(), QString("phone"));
+        QVERIFY(session.forgetConfiguration()); QVERIFY(!session.hasSavedConfiguration());
+        QVERIFY(QFile::exists(data + "/database.key"));
+        session.stop(); QTRY_COMPARE(session.phase(), QString("stopped"));
+    }
+
+    void privateFileRejectsSymlinksAndInvalidJson() {
+        QTemporaryDir directory;
+        QString path = directory.path() + "/private/settings.json";
+        QVariantMap settings; settings.insert("value", QString::fromUtf8("Тест 😀"));
+        QVERIFY(PrivateFile::write(path, settings));
+        QVariantMap read; QVERIFY(PrivateFile::read(path, &read)); QCOMPARE(read, settings);
+        QFile file(path); QVERIFY(file.remove());
+        fixture(directory.path() + "/outside", "untouched");
+        QVERIFY(QFile::link(directory.path() + "/outside", path));
+        QVERIFY(!PrivateFile::read(path, &read)); QVERIFY(!PrivateFile::write(path, settings));
+        QVERIFY(QFile::remove(path)); fixture(path, "{invalid"); QVERIFY(!PrivateFile::read(path, &read));
+    }
     void codec() {
         QVariantMap input;
         input.insert("@type", "test");

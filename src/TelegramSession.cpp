@@ -1,5 +1,6 @@
 #include "TelegramSession.hpp"
 #include "JsonCodec.hpp"
+#include "PrivateFile.hpp"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -239,15 +240,57 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("database_encryption_key", QString::fromLatin1(key.toBase64()));
     parameters.insert("use_file_database", true);
     parameters.insert("use_chat_info_database", true);
-    parameters.insert("use_message_database", false);
+    parameters.insert("use_message_database", true);
     parameters.insert("use_secret_chats", false);
     parameters.insert("api_id", id);
     parameters.insert("api_hash", hash);
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.3.0");
+    parameters.insert("application_version", "0.4.0");
     return authenticate(parameters);
+}
+
+bool TelegramSession::hasSavedConfiguration() const
+{
+    QVariantMap configuration;
+    return PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration) &&
+        configuration.value("api_id").toInt() > 0 &&
+        QRegExp("[0-9a-fA-F]{32}").exactMatch(configuration.value("api_hash").toString());
+}
+
+QString TelegramSession::savedApiId() const
+{
+    QVariantMap configuration;
+    if (!PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration)) return QString();
+    return configuration.value("api_id").toString();
+}
+
+bool TelegramSession::configureAndRemember(const QString &apiId, const QString &apiHash)
+{
+    if (!configure(apiId, apiHash)) return false;
+    QVariantMap configuration;
+    configuration.insert("api_id", apiId.trimmed());
+    configuration.insert("api_hash", apiHash.trimmed());
+    if (!PrivateFile::write(QDir(m_dataDirectory).filePath("api.json"), configuration))
+        m_error = ru("Подключение начато, но сохранить параметры API не удалось.");
+    emit changed();
+    return true;
+}
+
+bool TelegramSession::useSavedConfiguration()
+{
+    QVariantMap configuration;
+    if (!PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration)) return false;
+    return configure(configuration.value("api_id").toString(), configuration.value("api_hash").toString());
+}
+
+bool TelegramSession::forgetConfiguration()
+{
+    const QString path = QDir(m_dataDirectory).filePath("api.json");
+    const bool result = !QFile::exists(path) || QFile::remove(path);
+    emit changed();
+    return result;
 }
 
 bool TelegramSession::submit(const QString &value)

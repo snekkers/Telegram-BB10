@@ -15,6 +15,8 @@ class TelegramSession : public QObject {
     Q_PROPERTY(QString errorText READ errorText NOTIFY changed)
     Q_PROPERTY(QString version READ version NOTIFY changed)
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
+    Q_PROPERTY(bool hasSavedConfiguration READ hasSavedConfiguration NOTIFY changed)
+    Q_PROPERTY(QString savedApiId READ savedApiId NOTIFY changed)
 
 public:
     explicit TelegramSession(QObject *parent = 0);
@@ -27,10 +29,16 @@ public:
     QString errorText() const { return m_error; }
     QString version() const { return m_version; }
     bool busy() const { return m_busy; }
+    bool hasSavedConfiguration() const;
+    QString savedApiId() const;
+    QString dataDirectory() const { return m_dataDirectory; }
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
     Q_INVOKABLE bool configure(const QString &apiId, const QString &apiHash);
+    Q_INVOKABLE bool configureAndRemember(const QString &apiId, const QString &apiHash);
+    Q_INVOKABLE bool useSavedConfiguration();
+    Q_INVOKABLE bool forgetConfiguration();
     Q_INVOKABLE bool submit(const QString &value);
     // Application API; deliberately not invokable from QML.
     QString sendReady(QVariantMap object);
