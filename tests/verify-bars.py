@@ -25,7 +25,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.2.0.2" in manifest
+            assert "Package-Version: 0.3.0.3" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
             entry = next(line for line in manifest.splitlines() if line.startswith("Entry-Point: "))
@@ -63,6 +63,10 @@ def main():
     qt_tests = ElementTree.parse(ROOT / "build/session-tests/results.qt.xml").getroot()
     incidents = qt_tests.findall(".//Incident")
     assert incidents and all(item.get("type") == "pass" for item in incidents)
+    store_tests = ElementTree.parse(ROOT / "build/session-tests/store/results.xml").getroot()
+    assert store_tests.get("failures") == "0" and store_tests.get("errors") == "0"
+    store_incidents = ElementTree.parse(ROOT / "build/session-tests/store/results.qt.xml").getroot().findall(".//Incident")
+    assert store_incidents and all(item.get("type") == "pass" for item in store_incidents)
     report = {
         "checked_date": time.strftime("%Y-%m-%d"), "host": "Apple M1 / macOS arm64",
         "sdk": "BlackBerry Native SDK 10.3.1.995 / Linux amd64 in Docker",
@@ -73,8 +77,16 @@ def main():
                           "functions_including_setup_cleanup": int(tests.get("tests")),
                           "passed_rows_including_setup_cleanup": len(incidents), "failures": 0,
                           "real_tdlib": "1.8.69 offline: version, auth state, close; no parameters or account"},
+        "chat_tests": {"platform": "Linux ARM64 / Qt 5.15.8 in Docker; synthetic process",
+                       "results": "build/session-tests/store/results.xml",
+                       "passed_rows_including_setup_cleanup": len(store_incidents), "failures": 0,
+                       "checks": ["exact int53 IDs and int64 positions", "list and history pagination",
+                                  "stale history and edit/delete races", "incoming messages and previews",
+                                  "pending, acknowledged, sent, read and failed states", "send update/response races",
+                                  "timeouts, late replies and no automatic duplicate send", "permissions and data reset"]},
         "not_checked": ["Qt 4 JsonDataAccess execution", "BB10 runtime and QML rendering",
-                        "Telegram network login", "physical Classic installation"],
+                        "Telegram network login", "Telegram chat loading, sending and reconnection",
+                        "physical Classic installation"],
         "artifacts": artifacts,
     }
     (ROOT / "build/verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

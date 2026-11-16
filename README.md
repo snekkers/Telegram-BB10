@@ -15,13 +15,20 @@ NavigationPane. Данные живут в памяти и сбрасывают�
 и работает отдельно от UI. Реальный вход на BB10 ещё не проверен.
 [Устройство авторизации и проверки](docs/telegram-login.md).
 
+**В 0.3.0 подключены список чатов Telegram, история и текстовая отправка.**
+После входа главный экран переключается с демо на данные движка.
+Добавлены входящие обновления, правки, удаления, статусы отправки и
+восстановление текста при явном отказе. Логика проверена без аккаунта;
+реальную сеть и BB10 ещё нужно проверить.
+[Поведение чатов и тесты](docs/telegram-chats.md).
+
 **30 октября 2026 года обе сборки выполнены на Mac с M1** через Linux amd64
 контейнер с BlackBerry Native SDK 10.3.1.995:
 
 | Цель | Результат | Размер |
 | --- | --- | --- |
-| BB10 x86 Simulator-Debug | `build/simulator/berrygram-simulator.bar` | 402 008 байт |
-| BB10 ARMv7 Device-Debug, с движком | `build/device/berrygram-device.bar` | 16 641 704 байт |
+| BB10 x86 Simulator-Debug | `build/simulator/berrygram-simulator.bar` | 701 052 байт |
+| BB10 ARMv7 Device-Debug, с движком | `build/device/berrygram-device.bar` | 16 943 373 байт |
 
 Проверены успешное завершение компилятора и упаковщика, целостность ZIP,
 архитектура ELF внутри каждого BAR, manifest и соответствие QML исходникам.
@@ -44,8 +51,8 @@ Safe Mode с профилем Classic 720×720 и смена CPU на Intel Neha
 TDLib 1.8.69 для QNX ARMv7** с OpenSSL 3.5.9 и zlib 1.3.2. Строгая линковка,
 проверка экспортов и зависимостей прошли. Диагностический комплект:
 `build/device/telegram-runtime.zip`. Исполнение на Classic, вход в аккаунт
-ещё не проверены. Адаптер интерфейса проверен отдельно на Linux ARM64/Qt 5:
-13 сценариев прошли, включая запуск настоящей TDLib без аккаунта.
+ещё не проверены. Адаптер и логика чатов проверены отдельно на Linux ARM64/Qt 5:
+26 сценариев прошли, включая запуск настоящей TDLib без аккаунта.
 TDLib для x86 пока не собрана.
 [Проверка движка и следующие ограничения](docs/telegram-engine.md).
 [Подробности QNX-порта и повторение сборки](docs/qnx-port.md).
@@ -85,7 +92,8 @@ scripts\build-simulator.cmd
 2. Проверить квадратный экран, ввод текста, трекпад и Back/Menu в режиме Classic.
 3. Проверить исполнение ARMv7-движка и вход через Cascades на устройстве.
    Для полного теста в x86-симуляторе собрать TDLib для x86.
-4. Подключить список настоящих чатов и текстовые сообщения.
+4. Проверить настоящие чаты, отправку, восстановление сети и состояния
+   доставки с Telegram после подтверждения запуска движка на BB10.
 5. Добавить изображения, файлы, сохранение истории и восстановление соединения.
 6. На физическом Classic проверить установку BAR, клавиатуру, фоновые ограничения
    и расход батареи; затем заниматься Hub и уведомлениями.
@@ -98,6 +106,8 @@ scripts\build-simulator.cmd
 - `berrygram.pro` — проект qmake для BB10 Qt 4/Cascades.
 - `src/ChatController.*` — демонстрационные данные и модель для QML.
 - `src/TelegramSession.*`, `src/JsonCodec.*` — процесс движка и шаги авторизации.
+- `src/TelegramStore.*`, `src/TelegramController.*` — чаты, история, отправка
+  и нативные модели Cascades.
 - `assets/LoginPage.qml` — нативный экран входа.
 - `assets/main.qml`, `assets/ChatPage.qml` — нативные экраны.
 - `bar-descriptor.xml` — конфигурации x86 Simulator-Debug и ARMv7 Device-Debug.
@@ -108,6 +118,7 @@ scripts\build-simulator.cmd
 - `scripts/build-telegram-host.sh` — сборка процесса для macOS, BB10 x86 и ARMv7.
 - `tests/telegram-host-integration.py` — проверки с настоящей TDLib без аккаунта.
 - `scripts/test-telegram-session.sh` — проверки Qt-адаптера без GUI и аккаунта.
+- `tests/store-tests.cpp`, `tests/fake-chat-engine.py` — сценарии чатов и отправки.
 - `tests/verify-bars.py` — проверка состава BAR и отчёт сборки.
 - `porting/`, `scripts/build-qnx-native.sh` — сборка TDLib ARMv7 на M1.
 - `scripts/stage-qnx-runtime.py` — проверка ELF и подготовка диагностического комплекта.

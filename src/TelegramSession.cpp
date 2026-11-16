@@ -149,6 +149,13 @@ bool TelegramSession::authenticate(QVariantMap object)
     return true;
 }
 
+QString TelegramSession::sendReady(QVariantMap object)
+{
+    if (m_phase != "ready" || m_stopping || m_failed)
+        return QString();
+    return request(object);
+}
+
 bool TelegramSession::loadDatabaseKey(QByteArray *key)
 {
     QDir directory(m_dataDirectory);
@@ -239,7 +246,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.2.0");
+    parameters.insert("application_version", "0.3.0");
     return authenticate(parameters);
 }
 
@@ -336,6 +343,7 @@ void TelegramSession::handle(const QVariantMap &object)
     }
     if (type == "updateAuthorizationState")
         authorization(object.value("authorization_state").toMap());
+    emit eventReceived(object);
 }
 
 void TelegramSession::authorization(const QVariantMap &state)
@@ -363,7 +371,7 @@ void TelegramSession::authorization(const QVariantMap &state)
     else if (type == "authorizationStateWaitEmailCode")
         setPhase("emailCode", ru("Введите код из письма Telegram"));
     else if (type == "authorizationStateReady")
-        setPhase("ready", ru("Вход выполнен. Настоящие чаты пока не подключены."));
+        setPhase("ready", ru("Вход выполнен. Чаты доступны на главном экране."));
     else if (type == "authorizationStateClosed")
         fail(ru("Telegram закрыл сессию. Можно запустить движок снова."));
     else if (type == "authorizationStateClosing" || type == "authorizationStateLoggingOut") {

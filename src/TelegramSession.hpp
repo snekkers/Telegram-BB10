@@ -32,9 +32,12 @@ public:
     Q_INVOKABLE void stop();
     Q_INVOKABLE bool configure(const QString &apiId, const QString &apiHash);
     Q_INVOKABLE bool submit(const QString &value);
+    // Application API; deliberately not invokable from QML.
+    QString sendReady(QVariantMap object);
 
 signals:
     void changed();
+    void eventReceived(const QVariantMap &object);
 
 private slots:
     void started();
