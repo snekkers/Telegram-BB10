@@ -91,6 +91,12 @@ private:
     }
 
 private slots:
+    void groupAndChannelMessagesUseWideLayoutWhilePrivateChatsDoNot() {
+        Peer peer; ready(peer); open(peer,A); QVERIFY(peer.store.currentChatWide());
+        open(peer,B); QVERIFY(!peer.store.currentChatWide());
+        open(peer,C); QVERIFY(peer.store.currentChatWide());
+        peer.store.closeChat(); QVERIFY(!peer.store.currentChatWide());
+    }
     void communityAvatarsLoadChangeAndDisappear(){
         Peer peer;ready(peer);
         foreach(const QString &id,QStringList()<<A<<C){

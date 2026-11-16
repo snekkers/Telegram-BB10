@@ -2,8 +2,8 @@
 <qnx xmlns="http://www.qnx.com/schemas/application/1.0">
     <id>org.example.berrygram</id>
     <name>Telegram</name>
-    <versionNumber>0.16.1</versionNumber>
-    <buildId>22</buildId>
+    <versionNumber>0.17.0</versionNumber>
+    <buildId>23</buildId>
     <description>Telegram client for BlackBerry Classic.</description>
     <author>Berrygram Developer</author>
 

@@ -8,6 +8,9 @@ NavigationPane {
     property bool demo: false
     property string authPhase: _telegram.phase
     property bool autoConfigAttempted: false
+    property bool loginStarted: false
+    property bool previewWelcome: false
+    property bool restoringSession: !previewWelcome && !live && _telegram.hasSavedConfiguration && (authPhase==="stopped" || authPhase==="starting" || authPhase==="parameters")
     property string chatCategory: "personal"
     function applyCategory() { _live.setChatCategory(chatCategory); _chat.setChatCategory(chatCategory); }
     property bool archiveView: false
@@ -40,7 +43,7 @@ NavigationPane {
                     autoConfigAttempted=true
                     if(!_telegram.useSavedConfiguration())openLogin()
                 }
-            }else openLogin()
+            }else if(loginStarted)openLogin()
         }else if(authPhase==="phone" || authPhase==="code" || authPhase==="password" || authPhase==="email" || authPhase==="emailCode" || authPhase==="failed" || authPhase==="unsupported")openLogin()
         else if(authPhase==="ready" && navigation.top && navigation.top.objectName==="loginPage")navigation.pop()
     }
@@ -84,11 +87,13 @@ NavigationPane {
         var page=contactsPageDefinition.createObject();if(page){page.livePage=live;navigation.push(page);}
     }
     function openLogin() {
+        loginStarted=true
         if(navigation.top && navigation.top.objectName==="loginPage")return
         var page = loginPageDefinition.createObject();
         if (page) {
             page.closeRequested.connect(function() { navigation.pop(); });
             navigation.push(page);
+            page.beginLogin();
         }
     }
     function openChatById(chatId, messageId) {
@@ -104,6 +109,7 @@ NavigationPane {
         objectName: "chatsPage"
         actionBarVisibility: ChromeVisibility.Hidden
         titleBar: AppHeader {
+            visibility: navigation.live || navigation.demo ? ChromeVisibility.Visible : ChromeVisibility.Hidden
             caption: navigation.live || navigation.demo ? (navigation.archiveView?qsTr("Архив"):qsTr("Чаты")) : "Telegram"
             detail: navigation.live ? (_notifications.unread>0?qsTr("Непрочитанных: ")+_notifications.unread+" · "+_live.connectionStatus:_live.connectionStatus) : navigation.demo ? qsTr("Демо · без подключения") : qsTr("Telegram для BlackBerry Classic")
             compact: navigation.live || navigation.demo
@@ -123,7 +129,7 @@ NavigationPane {
             ActionItem {objectName: "newMessageAction";title: qsTr("Новое сообщение");imageSource: "asset:///icons/edit-white.png";enabled: navigation.live || navigation.demo;onTriggered: navigation.openContacts()},
             ActionItem { objectName: "globalSearchAction"; title: qsTr("Поиск"); imageSource: "asset:///icons/search-white.png"; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
             ActionItem { objectName: "archiveAction"; title: navigation.archiveView?qsTr("К чатам"):qsTr("Архив"); imageSource: "asset:///icons/archive-white.png"; enabled: navigation.live || navigation.demo; onTriggered: navigation.setArchive(!navigation.archiveView) },
-            ActionItem { title: navigation.live ? qsTr("Подключение") : qsTr("Войти в Telegram"); imageSource: "asset:///icons/settings-white.png"; onTriggered: navigation.openLogin() },
+            ActionItem { title: navigation.live ? qsTr("Подключение") : qsTr("Войти в Telegram"); imageSource: "asset:///icons/settings-white.png"; onTriggered: navigation.live ? navigation.openDiagnostics() : navigation.openLogin() },
             ActionItem { title: qsTr("Выйти из демо"); enabled: navigation.demo && !navigation.live; onTriggered: navigation.demo = false }
         ]
         Container {
@@ -131,19 +137,20 @@ NavigationPane {
             horizontalAlignment: HorizontalAlignment.Fill
             verticalAlignment: VerticalAlignment.Fill
             Container {
+                objectName: "welcomeScreen"
                 visible: !navigation.live && !navigation.demo
-                leftPadding: ui.du(4); rightPadding: ui.du(4)
-                topPadding: ui.du(6); bottomPadding: ui.du(3)
-                Avatar {imageProvider: _avatars; title: "Telegram"; chatId: "telegram"; horizontalAlignment: HorizontalAlignment.Center; bottomMargin: ui.du(2) }
-                Label { text: "Telegram"; textStyle.base: SystemDefaults.TextStyles.BigText; textStyle.color: Color.create(_prefs.ink); horizontalAlignment: HorizontalAlignment.Center }
-                Label {
-                    text: qsTr("Ваши чаты. Знакомый Telegram.\nНа клавиатуре BlackBerry.")
-                    multiline: true; textStyle.color: Color.create(_prefs.secondary); textStyle.textAlign: TextAlign.Center
-                    horizontalAlignment: HorizontalAlignment.Fill
-                    bottomMargin: ui.du(3)
-                }
-                Button { text: qsTr("Войти в Telegram"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: navigation.openLogin() }
-                Button { text: qsTr("Посмотреть интерфейс"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: navigation.demo = true }
+                background: Color.White
+                horizontalAlignment: HorizontalAlignment.Fill
+                verticalAlignment: VerticalAlignment.Fill
+                layoutProperties: StackLayoutProperties {spaceQuota: 1}
+                leftPadding: ui.du(4);rightPadding: ui.du(4);topPadding: ui.du(3);bottomPadding: ui.du(3)
+                Container {layoutProperties: StackLayoutProperties {spaceQuota: 1}}
+                ImageView {imageSource: "asset:///icon.png";scalingMethod: ScalingMethod.AspectFit;preferredWidth: ui.du(20);preferredHeight: ui.du(20);horizontalAlignment: HorizontalAlignment.Center;bottomMargin: ui.du(3)}
+                Label {text: "Telegram";textStyle.fontSize: FontSize.PointValue;textStyle.fontSizeValue: 14;textStyle.fontWeight: FontWeight.W600;textStyle.color: Color.Black;horizontalAlignment: HorizontalAlignment.Center}
+                Label {text: navigation.restoringSession?qsTr("Открываем ваши чаты…"):qsTr("Быстрый и безопасный обмен сообщениями.");multiline: true;textStyle.color: Color.Black;textStyle.textAlign: TextAlign.Center;horizontalAlignment: HorizontalAlignment.Fill;topMargin: ui.du(1)}
+                Container {layoutProperties: StackLayoutProperties {spaceQuota: 1}}
+                ActivityIndicator {visible: navigation.restoringSession;running: visible;preferredWidth: ui.du(5);preferredHeight: ui.du(5);horizontalAlignment: HorizontalAlignment.Center}
+                Button {objectName: "startMessagingButton";visible: !navigation.restoringSession;text: qsTr("Начать общение");appearance: ControlAppearance.Primary;preferredHeight: ui.du(7.5);horizontalAlignment: HorizontalAlignment.Fill;onClicked: navigation.openLogin()}
             }
             Container {
                 visible: navigation.live || navigation.demo

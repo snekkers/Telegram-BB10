@@ -99,6 +99,7 @@ void UiTools::checkRequest()
     const QString operation=request.value("action").toString();
     if(operation=="session-state" || operation=="resume-saved" || operation=="stop-session" || operation=="live-people" || operation=="disable-checks") {
         if(operation=="resume-saved" && m_session->hasSavedConfiguration()) {
+            if(navigation){navigation->setProperty("previewWelcome",false);navigation->setProperty("demo",false);}
             m_resumeSaved=true;
             if(m_session->phase()=="stopped")m_session->start();else resumeSaved();
         }
@@ -111,7 +112,18 @@ void UiTools::checkRequest()
     } else {
         const QString action=request.value("action").toString();
         bool ok=false;
-        if (action=="demo-list" && navigation->count()==1) {
+        if (action=="auth-welcome" && navigation->count()==1) {
+            navigation->setProperty("demo",false);navigation->setProperty("previewWelcome",true);ok=true;
+        } else if(action=="auth-preview" && navigation->count()==1) {
+            const QString phase=request.value("phase").toString();
+            if(phase=="phone" || phase=="password" || phase=="code") {
+                QmlDocument *document=QmlDocument::create("asset:///LoginPage.qml").parent(this);
+                document->setContextProperty("_telegram",m_session);
+                QObject *preview=new QObject(document);preview->setObjectName(phase);document->setContextProperty("_authPreview",preview);
+                Page *page=document->createRootObject<Page>();
+                if(page){navigation->push(page);ok=true;}
+            }
+        } else if (action=="demo-list" && navigation->count()==1) {
             navigation->setProperty("demo",true);ok=true;
         } else if(action=="preferences" && navigation->count()==1){
             ok=QMetaObject::invokeMethod(navigation,"openSettings");
@@ -280,14 +292,16 @@ void UiTools::finishCheck()
 #ifdef BERRYGRAM_UI_CHECKS
     NavigationPane *navigation=qobject_cast<NavigationPane*>(m_root.data());
     const bool demoPage=navigation && navigation->top() && !m_live->ready() &&
-        navigation->property("demo").toBool() && (navigation->count()==1 ||
+        ((navigation->top()->objectName()=="loginPage" && navigation->top()->property("previewing").toBool()) ||
+        (navigation->count()==1 && navigation->property("previewWelcome").toBool()) ||
+        (navigation->property("demo").toBool() && (navigation->count()==1 ||
         navigation->top()->objectName()=="settingsPage" || navigation->top()->objectName()=="emojiPage" || navigation->top()->objectName()=="photoPage" ||
         navigation->top()->objectName()=="reactionPage" || navigation->top()->objectName()=="schedulePage" ||
         navigation->top()->objectName()=="voicePage" || navigation->top()->objectName()=="diagnosticsPage" || navigation->top()->objectName()=="downloadsPage" || navigation->top()->objectName()=="mutePage" || navigation->top()->objectName()=="scheduledMessagesPage" || navigation->top()->objectName()=="scheduledEditorPage" ||
         navigation->top()->objectName()=="searchPage" ||
         navigation->top()->objectName()=="contactsPage" ||
         navigation->top()->objectName()=="chatInfoPage" || navigation->top()->objectName()=="forwardPage" ||
-        (navigation->top()->objectName()=="chatPage" && !navigation->top()->property("liveChat").toBool()));
+        (navigation->top()->objectName()=="chatPage" && !navigation->top()->property("liveChat").toBool()))));
     if(demoPage) {
         Page *page=navigation->top();
         m_result.insert("page",page->objectName());
@@ -332,7 +346,10 @@ void UiTools::finishCheck()
         m_result.insert("contact_rows",contactRows);
         m_result.insert("status_text",m_demo->currentChatStatus());m_result.insert("status_active",m_demo->currentStatusActive());
         m_result.insert("composer_visible",page->property("composerVisible"));
-        QObject *messageList=page->findChild<QObject*>("messageList");if(messageList)m_result.insert("message_list_height",messageList->property("measuredHeight"));
+        QObject *messageList=page->findChild<QObject*>("messageList");if(messageList){m_result.insert("message_list_height",messageList->property("measuredHeight"));m_result.insert("row_width",messageList->property("rowWidth"));m_result.insert("wide_messages",messageList->property("wideMessages"));}
+        double widest=0;foreach(QObject *bubble,page->findChildren<QObject*>())if(bubble->objectName().startsWith("messageBubble-"))widest=qMax(widest,bubble->property("measuredWidth").toDouble());
+        m_result.insert("widest_bubble",widest);
+        if(page->objectName()=="loginPage")m_result.insert("auth_preview_phase",page->property("phase"));
         QSet<AvatarImage*> pictures;
         foreach(AvatarImage *picture,page->findChildren<AvatarImage*>())pictures.insert(picture);
         if(page->titleBar())foreach(AvatarImage *picture,page->titleBar()->findChildren<AvatarImage*>())pictures.insert(picture);

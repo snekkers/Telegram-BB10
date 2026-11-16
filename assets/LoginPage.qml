@@ -1,166 +1,192 @@
 import bb.cascades 1.3
-import "Ui.js" as Ui
 
 Page {
     id: loginPage
     objectName: "loginPage"
-    property string phase: _telegram.phase
+    actionBarVisibility: ChromeVisibility.Hidden
+    property string previewPhase: typeof _authPreview !== "undefined" ? _authPreview.objectName : ""
+    property bool previewing: previewPhase.length > 0
+    property string phase: previewing ? previewPhase : _telegram.phase
     property bool showApi: false
-    property bool showDetails: false
+    property bool loginActive: false
     signal closeRequested()
-    titleBar: AppHeader { caption: qsTr("Вход в Telegram"); detail: qsTr("Telegram для BlackBerry") }
-
     function heading() {
-        if (phase === "phone") return qsTr("Вход по номеру телефона");
-        if (phase === "code" || phase === "emailCode") return qsTr("Введите код");
-        if (phase === "password") return qsTr("Введите пароль");
-        if (phase === "email") return qsTr("Адрес электронной почты");
-        if (phase === "ready") return qsTr("Вы вошли в Telegram");
-        if (phase === "parameters") return qsTr("Подключение к Telegram");
-        return qsTr("Добро пожаловать в Telegram");
+        if (phase === "password") return qsTr("Ваш пароль");
+        if (phase === "code" || phase === "emailCode") return qsTr("Код подтверждения");
+        if (phase === "email") return qsTr("Ваша почта");
+        if (phase === "failed" || phase === "unsupported") return qsTr("Подключение к Telegram");
+        return qsTr("Ваш номер телефона");
+    }
+    function explanation() {
+        if (phase === "password") return qsTr("Включена двухэтапная проверка.\nВаш аккаунт защищён дополнительным паролем.");
+        if (phase === "code") return qsTr("Введите код, полученный от Telegram.");
+        if (phase === "emailCode") return qsTr("Введите код из письма Telegram.");
+        if (phase === "email") return qsTr("Telegram запрашивает адрес электронной почты для подтверждения входа.");
+        return qsTr("Выберите страну и введите\nсвой номер телефона.");
     }
     function submitCredential() {
-        if (!_telegram.busy && _telegram.submit(credential.text)) credential.text = "";
+        if (previewing || _telegram.busy) return;
+        if (phase === "phone") {
+            var raw = phoneDigits.text.trim();
+            var number = raw.charAt(0) === "+" ? raw : countryCode.text + raw;
+            if (_telegram.submit(number)) phoneDigits.text = "";
+        } else if (_telegram.submit(credential.text)) credential.text = "";
     }
-    onCreationCompleted: {
+    function chooseConnection() {
+        if (loginActive && !previewing && phase === "parameters" && !_telegram.busy && !_telegram.hasSavedConfiguration && _telegram.testConfigurationAvailable) _telegram.useTestConfiguration();
+    }
+    function beginLogin() {
+        loginActive=true;
         if (phase === "stopped") _telegram.start();
+        else chooseConnection();
     }
     onPhaseChanged: {
+        chooseConnection();
         if (credential) credential.text = "";
         if (apiHash) apiHash.text = "";
+        if (!previewing && phase === "phone" && phoneDigits) phoneDigits.requestFocus();
     }
-    actions: [
-        ActionItem {
-            title: qsTr("Отключиться")
-            enabled: phase !== "stopped" && phase !== "closing"
-            onTriggered: { credential.text = ""; apiHash.text = ""; _live.flushDrafts(); _telegram.stop(); }
-        }
-    ]
     ScrollView {
         scrollViewProperties.scrollMode: ScrollMode.Vertical
         Container {
-            background: Color.create(_prefs.surface)
-            leftPadding: ui.du(3.2)
-            rightPadding: ui.du(3.2)
-            topPadding: ui.du(4)
-            bottomPadding: ui.du(3)
+            background: Color.White
+            horizontalAlignment: HorizontalAlignment.Fill
+            leftPadding: ui.du(4); rightPadding: ui.du(4)
+            topPadding: ui.du(1.5); bottomPadding: ui.du(3)
+            Label {
+                text: qsTr("‹ Назад")
+                textStyle.color: Color.create("#0088ee")
+                textStyle.base: SystemDefaults.TextStyles.SmallText
+                bottomMargin: ui.du(1)
+                gestureHandlers: [TapHandler {onTapped: if(!_telegram.busy || loginPage.previewing)loginPage.closeRequested()}]
+            }
             ImageView {
-                imageSource: "asset:///icon.png"
+                imageSource: phase === "password" ? "asset:///ui/login-password.png" : phase === "code" || phase === "emailCode" || phase === "email" ? "asset:///ui/login-code.png" : "asset:///ui/login-phone.png"
                 scalingMethod: ScalingMethod.AspectFit
-                preferredWidth: ui.du(16)
-                preferredHeight: ui.du(16)
+                preferredWidth: ui.du(11); preferredHeight: ui.du(11)
                 horizontalAlignment: HorizontalAlignment.Center
-                bottomMargin: ui.du(2)
+                bottomMargin: ui.du(1.5)
             }
             Label {
                 text: loginPage.heading()
-                textStyle.base: SystemDefaults.TextStyles.BigText
-                textStyle.color: Color.create(_prefs.ink)
+                textStyle.fontSize: FontSize.PointValue
+                textStyle.fontSizeValue: 11
+                textStyle.fontWeight: FontWeight.W600
+                textStyle.color: Color.Black
+                textStyle.textAlign: TextAlign.Center
+                horizontalAlignment: HorizontalAlignment.Fill
                 multiline: true
-                horizontalAlignment: HorizontalAlignment.Center
+                bottomMargin: ui.du(1)
             }
             Label {
-                text: phase === "phone" ? qsTr("Укажите номер телефона с кодом страны. Telegram отправит код подтверждения в приложение или другим доступным способом.")
-                    : phase === "password" ? qsTr("Введите пароль двухэтапной проверки вашего аккаунта.")
-                    : phase === "parameters" ? qsTr("Чтобы подключиться, один раз укажите параметры приложения Telegram с my.telegram.org/apps. После этого вход будет проходить по номеру телефона.")
-                    : phase === "ready" ? qsTr("Теперь можно открыть ваши чаты.") : _telegram.status
-                textFormat: TextFormat.Plain
-                textStyle.color: Color.create(_prefs.secondary)
+                text: loginPage.explanation()
+                textStyle.color: Color.create("#202020")
+                textStyle.textAlign: TextAlign.Center
+                horizontalAlignment: HorizontalAlignment.Fill
                 multiline: true
-                bottomMargin: ui.du(2)
-                horizontalAlignment: HorizontalAlignment.Center
+                textFormat: TextFormat.Plain
+                bottomMargin: ui.du(3)
             }
             Container {
-                visible: _telegram.errorText.length > 0
-                background: Color.create("#fff0ec")
-                leftPadding: ui.du(1.5); rightPadding: ui.du(1.5)
-                topPadding: ui.du(1); bottomPadding: ui.du(1)
-                Label { text: _telegram.errorText; textFormat: TextFormat.Plain; multiline: true; textStyle.color: Color.create("#a74132") }
+                visible: phase === "phone" || phase === "parameters"
+                horizontalAlignment: HorizontalAlignment.Fill
+                DropDown {
+                    objectName: "phoneCountry"
+                    title: qsTr("Страна")
+                    enabled: !_telegram.busy
+                    Option {text: qsTr("Россия");value: "+7";selected: true}
+                    Option {text: qsTr("Казахстан");value: "+7"}
+                    Option {text: qsTr("Беларусь");value: "+375"}
+                    Option {text: qsTr("Украина");value: "+380"}
+                    Option {text: qsTr("Армения");value: "+374"}
+                    Option {text: qsTr("Грузия");value: "+995"}
+                    Option {text: qsTr("Другой код страны");value: "+"}
+                    onSelectedValueChanged: if(countryCode)countryCode.text=selectedValue
+                }
+                Container {
+                    layout: StackLayout {orientation: LayoutOrientation.LeftToRight}
+                    topMargin: ui.du(1)
+                    TextField {
+                        id: countryCode
+                        objectName: "phoneCountryCode"
+                        text: "+7"
+                        preferredWidth: ui.du(12);maxWidth: ui.du(12)
+                        maximumLength: 5
+                        enabled: !_telegram.busy
+                        inputMode: TextFieldInputMode.PhoneNumber
+                        input.flags: TextInputFlag.AutoCorrectionOff | TextInputFlag.PredictionOff | TextInputFlag.AutoCapitalizationOff
+                        accessibility.name: qsTr("Код страны")
+                    }
+                    TextField {
+                        id: phoneDigits
+                        objectName: "phoneNumber"
+                        hintText: "000 000 00 00"
+                        layoutProperties: StackLayoutProperties {spaceQuota: 1}
+                        maximumLength: 32
+                        enabled: phase === "phone" && !_telegram.busy
+                        inputMode: TextFieldInputMode.PhoneNumber
+                        input {
+                            flags: TextInputFlag.AutoCorrectionOff | TextInputFlag.PredictionOff | TextInputFlag.AutoCapitalizationOff
+                            submitKey: SubmitKey.Next
+                            onSubmitted: loginPage.submitCredential()
+                        }
+                        accessibility.name: qsTr("Номер телефона")
+                    }
+                }
             }
-            ActivityIndicator { visible: _telegram.busy; running: visible; horizontalAlignment: HorizontalAlignment.Center; preferredWidth: ui.du(5); preferredHeight: ui.du(5) }
+            TextField {
+                id: credential
+                objectName: "loginCredential"
+                visible: phase === "code" || phase === "password" || phase === "email" || phase === "emailCode"
+                hintText: phase === "password" ? qsTr("Пароль") : phase === "email" ? "name@example.com" : qsTr("Код подтверждения")
+                enabled: !_telegram.busy
+                maximumLength: 1024
+                inputMode: phase === "password" ? TextFieldInputMode.Password : phase === "email" ? TextFieldInputMode.EmailAddress : TextFieldInputMode.NumbersAndPunctuation
+                input {
+                    flags: TextInputFlag.AutoCorrectionOff | TextInputFlag.PredictionOff | TextInputFlag.AutoCapitalizationOff
+                    submitKey: SubmitKey.Next
+                    onSubmitted: loginPage.submitCredential()
+                }
+            }
+            Label {
+                visible: !loginPage.previewing && _telegram.errorText.length > 0
+                text: _telegram.errorText
+                multiline: true
+                textFormat: TextFormat.Plain
+                textStyle.color: Color.create("#bc3e36")
+            }
+            ActivityIndicator {visible: !loginPage.previewing && _telegram.busy;running: visible;preferredWidth: ui.du(4);preferredHeight: ui.du(4);horizontalAlignment: HorizontalAlignment.Center}
             Button {
-                visible: phase === "stopped" || phase === "failed"
-                enabled: _telegram.available && !_telegram.busy
+                objectName: "loginContinue"
                 text: qsTr("Продолжить")
+                appearance: ControlAppearance.Primary
+                preferredHeight: ui.du(7.5)
+                topMargin: ui.du(3)
+                horizontalAlignment: HorizontalAlignment.Fill
+                enabled: !loginPage.previewing && !_telegram.busy && (phase === "phone" ? countryCode.text.length>1 && phoneDigits.text.replace(/[^0-9]/g, "").length>=5 : credential.visible && credential.text.length>0)
+                onClicked: loginPage.submitCredential()
+            }
+            Button {
+                visible: !loginPage.previewing && (phase === "failed" || phase === "stopped")
+                text: qsTr("Подключиться снова")
                 horizontalAlignment: HorizontalAlignment.Fill
                 onClicked: _telegram.start()
             }
-            Container {
-                visible: phase === "parameters"
-                Button {
-                    visible: _telegram.hasSavedConfiguration
-                    text: qsTr("Продолжить подключение")
-                    enabled: !_telegram.busy
-                    horizontalAlignment: HorizontalAlignment.Fill
-                    onClicked: _telegram.useSavedConfiguration()
-                }
-                Container {
-                    visible: _telegram.testConfigurationAvailable && !_telegram.hasSavedConfiguration
-                    Button {
-                        text: qsTr("Тестовое подключение")
-                        enabled: !_telegram.busy
-                        horizontalAlignment: HorizontalAlignment.Fill
-                        onClicked: _telegram.useTestConfiguration()
-                    }
-                    Label {
-                        text: qsTr("Официальные тестовые ключи Telegram. Подходят только для разработки; сервер может ограничить вход. Для обычного использования нужны параметры вашего приложения Telegram.")
-                        textStyle.base: SystemDefaults.TextStyles.SmallText
-                        textStyle.color: Color.create(_prefs.secondary)
-                        multiline: true
-                    }
-                }
-                Button {
-                    text: loginPage.showApi ? qsTr("Скрыть настройки подключения") : qsTr("Свои параметры API")
-                    enabled: !_telegram.busy
-                    horizontalAlignment: HorizontalAlignment.Fill
-                    onClicked: loginPage.showApi = !loginPage.showApi
-                }
-                Container {
-                    visible: loginPage.showApi
-                    Label { text: qsTr("Параметры приложения с my.telegram.org/apps. Это разовая настройка этой сборки."); multiline: true; textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary) }
-                    TextField {
-                        id: apiId
-                        hintText: "api_id"
-                        enabled: !_telegram.busy
-                        inputMode: TextFieldInputMode.NumbersAndPunctuation
-                        input.flags: TextInputFlag.AutoCorrectionOff | TextInputFlag.PredictionOff | TextInputFlag.AutoCapitalizationOff
-                    }
-                    TextField { id: apiHash; hintText: "api_hash"; enabled: !_telegram.busy; inputMode: TextFieldInputMode.Password; maximumLength: 32 }
-                    CheckBox { id: rememberApi; text: qsTr("Запомнить на этом устройстве"); checked: true; enabled: !_telegram.busy }
-                    Button {
-                        text: qsTr("Подключиться")
-                        enabled: !_telegram.busy && apiId.text.length > 0 && apiHash.text.length === 32
-                        horizontalAlignment: HorizontalAlignment.Fill
-                        onClicked: {
-                            var accepted = rememberApi.checked ? _telegram.configureAndRemember(apiId.text, apiHash.text) : _telegram.configure(apiId.text, apiHash.text);
-                            if (accepted) apiHash.text = "";
-                        }
-                    }
-                    Button { visible: _telegram.hasSavedConfiguration; text: qsTr("Удалить сохранённые параметры"); enabled: !_telegram.busy; onClicked: _telegram.forgetConfiguration() }
-                }
+            Label {
+                visible: !loginPage.previewing && phase === "parameters" && (!_telegram.testConfigurationAvailable || !_telegram.busy)
+                text: loginPage.showApi ? qsTr("Скрыть настройки") : qsTr("Настройки подключения")
+                textStyle.color: Color.create("#0088ee")
+                textStyle.base: SystemDefaults.TextStyles.SmallText
+                horizontalAlignment: HorizontalAlignment.Center
+                topMargin: ui.du(2)
+                gestureHandlers: [TapHandler {onTapped: loginPage.showApi=!loginPage.showApi}]
             }
             Container {
-                visible: phase === "phone" || phase === "code" || phase === "password" || phase === "email" || phase === "emailCode"
-                TextField {
-                    id: credential
-                    hintText: phase === "phone" ? "+7 999 123 45 67" : phase === "password" ? qsTr("Пароль") : phase === "email" ? "name@example.com" : qsTr("Код")
-                    enabled: !_telegram.busy
-                    maximumLength: 1024
-                    inputMode: phase === "phone" ? TextFieldInputMode.PhoneNumber : phase === "email" ? TextFieldInputMode.EmailAddress : phase === "password" ? TextFieldInputMode.Password : TextFieldInputMode.NumbersAndPunctuation
-                    input {
-                        flags: TextInputFlag.AutoCorrectionOff | TextInputFlag.PredictionOff | TextInputFlag.AutoCapitalizationOff
-                        submitKey: SubmitKey.Next
-                        onSubmitted: loginPage.submitCredential()
-                    }
-                }
-                Button { text: qsTr("Продолжить"); enabled: !_telegram.busy && credential.text.trim().length > 0; horizontalAlignment: HorizontalAlignment.Fill; onClicked: loginPage.submitCredential() }
-            }
-            Button { visible: phase === "ready"; text: qsTr("Открыть чаты"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: loginPage.closeRequested() }
-            Button { text: loginPage.showDetails ? qsTr("Скрыть сведения") : qsTr("Сведения о подключении"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: loginPage.showDetails = !loginPage.showDetails }
-            Container {
-                visible: loginPage.showDetails
-                Label { text: "Telegram 0.16.0.21" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
-                Label { text: qsTr("Сессия хранится на устройстве. Отключение сохраняет вход в аккаунт."); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
+                visible: !loginPage.previewing && phase === "parameters" && (loginPage.showApi || !_telegram.testConfigurationAvailable)
+                Label {text: qsTr("Параметры вашего приложения с my.telegram.org/apps. Они сохранятся на этом устройстве.");multiline: true;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create("#75838e")}
+                TextField {id: apiId;hintText: "api_id";inputMode: TextFieldInputMode.NumbersAndPunctuation;enabled: !_telegram.busy}
+                TextField {id: apiHash;hintText: "api_hash";inputMode: TextFieldInputMode.Password;maximumLength: 32;enabled: !_telegram.busy}
+                Button {text: qsTr("Подключиться");enabled: !_telegram.busy && apiId.text.length>0 && apiHash.text.length===32;onClicked: if(_telegram.configureAndRemember(apiId.text,apiHash.text))apiHash.text=""}
             }
         }
     }

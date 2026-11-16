@@ -39,6 +39,7 @@ public:
     void cancelContactOpen();
     QString currentChatStatus() const;
     bool currentStatusActive() const;
+    bool currentChatWide() const { const QString type=m_chats.value(m_current).value("type").toString(); return type=="chatTypeBasicGroup" || type=="chatTypeSupergroup"; }
     bool composerVisible() const {const QVariantMap current=m_chats.value(m_current);return !m_current.isEmpty() && (!current.value("isChannel").toBool() || current.value("canSend").toBool());}
     QString currentAvatarKey() const { return m_current.isEmpty()?QString():"chat:"+m_current; }
     QString avatarPath(const QString &key) const;

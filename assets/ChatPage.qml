@@ -235,6 +235,7 @@ Page {
             property variant avatarProvider: _avatars
             property variant preferences: _prefs
             property variant mediaProvider: _media
+            property bool wideMessages: chatPage.source.currentChatWide
             id: messageList
             objectName: "messageList"
             stickToEdgePolicy: ListViewStickToEdgePolicy.End
@@ -325,14 +326,19 @@ Page {
                         Container {
                             layout: DockLayout {}
                             horizontalAlignment: HorizontalAlignment.Fill
-                            leftPadding: ListItemData.outgoing ? ui.du(9) : ui.du(1.2)
-                            rightPadding: ListItemData.outgoing ? ui.du(1.2) : ui.du(9)
+                            leftPadding: messageItem.ListItem.view.wideMessages ? ui.du(0.8) : ListItemData.outgoing ? ui.du(9) : ui.du(1.2)
+                            rightPadding: messageItem.ListItem.view.wideMessages ? ui.du(0.8) : ListItemData.outgoing ? ui.du(1.2) : ui.du(9)
                             topPadding: ListItemData.joinedPrevious === true ? ui.du(0.15) : ui.du(0.65)
                             bottomPadding: ui.du(0.15)
                             Container {
+                            id: messageBubble
+                            objectName: "messageBubble-"+(ListItemData.messageId || "")
+                            property real measuredWidth: 0
+                            attachedObjects: [LayoutUpdateHandler {onLayoutFrameChanged: messageBubble.measuredWidth=layoutFrame.width}]
                             background: messageItem.ListItem.view.preferences.dark ? Color.create(ListItemData.outgoing?"#315942":"#35434e") : (ListItemData.outgoing ? outgoingPaint.imagePaint : incomingPaint.imagePaint)
-                            horizontalAlignment: ListItemData.outgoing ? HorizontalAlignment.Right : HorizontalAlignment.Left
-                            maxWidth: Math.min(ui.du(58), messageItem.ListItem.view.rowWidth - ui.du(11))
+                            horizontalAlignment: messageItem.ListItem.view.wideMessages ? HorizontalAlignment.Fill : ListItemData.outgoing ? HorizontalAlignment.Right : HorizontalAlignment.Left
+                            minWidth: messageItem.ListItem.view.wideMessages ? messageItem.ListItem.view.rowWidth - ui.du(1.6) : 0
+                            maxWidth: messageItem.ListItem.view.wideMessages ? messageItem.ListItem.view.rowWidth - ui.du(1.6) : Math.min(ui.du(58), messageItem.ListItem.view.rowWidth - ui.du(11))
                             leftPadding: ui.du(1.8); rightPadding: ui.du(1.8)
                             topPadding: ui.du(0.9); bottomPadding: ui.du(0.6)
                             contextActions: [
@@ -363,7 +369,7 @@ Page {
                                 background: Color.create("#e5edf2")
                                 gestureHandlers: [TapHandler {onTapped: messageItem.ListItem.view.openReply(ListItemData.replyChatId || "", ListItemData.replyMessageId || "")} ]
                                 leftPadding: ui.du(1);rightPadding: ui.du(1);topPadding: ui.du(0.5);bottomPadding: ui.du(0.5)
-                                Label { text: ListItemData.replyQuote || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.blue);maxWidth: Math.min(ui.du(50),messageItem.ListItem.view.rowWidth-ui.du(19)) }
+                                Label { text: ListItemData.replyQuote || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.blue);maxWidth: messageItem.ListItem.view.wideMessages ? messageItem.ListItem.view.rowWidth-ui.du(7.2) : Math.min(ui.du(50),messageItem.ListItem.view.rowWidth-ui.du(19)) }
                             }
                             Label {
                                 visible: ListItemData.showAuthor === true
@@ -375,6 +381,8 @@ Page {
                                 bottomMargin: ui.du(0.4)
                             }
                             EmojiLabel {
+                                objectName: "messageText-"+(ListItemData.messageId || "")
+                                fillWidth: messageItem.ListItem.view.wideMessages
                                 visible: (ListItemData.text || "").length > 0
                                 text: ListItemData.text || ""
                                 ink: messageItem.ListItem.view.preferences.dark?"#f2f5f6":Ui.ink
@@ -382,21 +390,22 @@ Page {
                                 onLinkActivated: {if(messageItem.ListItem.view.selecting)messageItem.ListItem.view.selectMessage(ListItemData.messageId,false);else messageItem.ListItem.view.openLink(url)}
                                 textSize: messageItem.ListItem.view.preferences.textSize
                                 pixelSize: ui.du(messageItem.ListItem.view.preferences.textSize===0?2.8:messageItem.ListItem.view.preferences.textSize===2?3.8:3.2)
-                                textWidth: Math.min(ui.du(54), messageItem.ListItem.view.rowWidth - ui.du(15))
+                                textWidth: messageItem.ListItem.view.wideMessages ? messageItem.ListItem.view.rowWidth-ui.du(5.2) : Math.min(ui.du(54), messageItem.ListItem.view.rowWidth - ui.du(15))
                                 topMargin: 0; bottomMargin: 0
                             }
                             EmojiLabel {
+                                fillWidth: messageItem.ListItem.view.wideMessages
                                 visible: (ListItemData.reactionDisplay || "").length>0
                                 text: ListItemData.reactionDisplay || ""
                                 ink: messageItem.ListItem.view.preferences.dark?"#f2f5f6":Ui.ink
-                                textWidth: Math.min(ui.du(52),messageItem.ListItem.view.rowWidth-ui.du(15))
+                                textWidth: messageItem.ListItem.view.wideMessages ? messageItem.ListItem.view.rowWidth-ui.du(5.2) : Math.min(ui.du(52),messageItem.ListItem.view.rowWidth-ui.du(15))
                                 pixelSize: ui.du(2.8);textSize: 0
                                 gestureHandlers: [TapHandler {onTapped: messageItem.ListItem.view.openReactions(ListItemData.messageId)}]
                             }
                             ImageView {
                                 visible: ListItemData.media !== undefined && ListItemData.media.kind === "photo" && ListItemData.media.localUrl.length > 0
                                 imageSource: visible ? messageItem.ListItem.view.mediaProvider.thumbnail(ListItemData.media.localUrl) : ""
-                                preferredWidth: ui.du(42); preferredHeight: ui.du(32)
+                                preferredWidth: messageItem.ListItem.view.wideMessages ? messageItem.ListItem.view.rowWidth-ui.du(5.2) : ui.du(42); preferredHeight: ui.du(32)
                                 scalingMethod: ScalingMethod.AspectFit
                                 accessibility.name: qsTr("Фото из сообщения")
                                 gestureHandlers: [TapHandler {onTapped: messageItem.ListItem.view.openPhoto(ListItemData.messageId)}]

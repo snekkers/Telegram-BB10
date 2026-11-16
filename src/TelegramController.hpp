@@ -82,6 +82,7 @@ class TelegramController : public QObject {
     Q_PROPERTY(bool inComments READ inComments NOTIFY changed)
     Q_PROPERTY(bool commentsLoading READ commentsLoading NOTIFY changed)
     Q_PROPERTY(bool composerVisible READ composerVisible NOTIFY changed)
+    Q_PROPERTY(bool currentChatWide READ currentChatWide NOTIFY changed)
 public:
     bool inComments() const {return m_store->inComments();}
     bool commentsLoading() const {return m_store->commentsLoading();}
@@ -168,6 +169,7 @@ public:
     bool currentStatusActive() const {return m_store->currentStatusActive();}
     QString currentAvatarKey() const {return m_store->currentAvatarKey();}
     bool composerVisible() const {return m_store->composerVisible();}
+    bool currentChatWide() const {return m_store->currentChatWide();}
     Q_INVOKABLE void loadContacts(){m_store->loadContacts();}
     Q_INVOKABLE void setContactQuery(const QString &text){m_store->setContactQuery(text);}
     Q_INVOKABLE void setContactSection(int section){m_store->setContactSection(section);}

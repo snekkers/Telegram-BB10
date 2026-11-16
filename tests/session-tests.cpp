@@ -25,7 +25,7 @@ private:
         QVERIFY(!session.configure("12345", QString(32, 'a')));
     }
 private slots:
-    void developmentTestConfigurationIsExplicitAndNotPersisted() {
+    void developmentProfileRemembersExplicitChoiceWithoutSavingKeys() {
         QTemporaryDir directory;
         QString library = directory.path() + "/libtdjson.so", data = directory.path() + "/private";
         fixture(library, "test-api");
@@ -37,13 +37,22 @@ private slots:
         QVERIFY(session.useTestConfiguration());
         QTRY_COMPARE(session.phase(), QString("phone"));
         QVERIFY(!session.useTestConfiguration());
-        QVERIFY(!session.hasSavedConfiguration());
+        QVERIFY(session.hasSavedConfiguration());
         QVERIFY(!QFile::exists(data + "/api.json"));
+        QVariantMap profile; QVERIFY(PrivateFile::read(data + "/connection.json", &profile));
+        QCOMPARE(profile.value("profile").toString(), QString("development-test"));
         session.stop(); QTRY_COMPARE(session.phase(), QString("stopped"));
         session.start(); QTRY_COMPARE(session.phase(), QString("parameters"));
-        // Reopening never silently opts into restricted test credentials.
-        QVERIFY(!session.hasSavedConfiguration());
+        QVERIFY(session.hasSavedConfiguration());
+        QVERIFY(session.useSavedConfiguration()); QTRY_COMPARE(session.phase(), QString("phone"));
+        QVERIFY(session.forgetConfiguration()); QVERIFY(!session.hasSavedConfiguration());
+        QVERIFY(!QFile::exists(data + "/connection.json"));
 #else
+        QVERIFY(QDir().mkpath(data));
+        QVariantMap profile; profile.insert("profile", "development-test");
+        QVERIFY(PrivateFile::write(data + "/connection.json", profile));
+        QVERIFY(!session.hasSavedConfiguration());
+        QVERIFY(!session.useSavedConfiguration());
         QVERIFY(!session.testConfigurationAvailable());
         QVERIFY(!session.useTestConfiguration());
         QCOMPARE(session.phase(), QString("parameters"));

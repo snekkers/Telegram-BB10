@@ -249,7 +249,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.16.0.21");
+    parameters.insert("application_version", "0.17.0.23");
     const bool accepted=authenticate(parameters);
     if(accepted){m_runtimeApiId=apiId.trimmed();m_runtimeApiHash=hash;}
     return accepted;
@@ -258,9 +258,15 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
 bool TelegramSession::hasSavedConfiguration() const
 {
     QVariantMap configuration;
-    return PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration) &&
+    if (PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration) &&
         configuration.value("api_id").toInt() > 0 &&
-        QRegExp("[0-9a-fA-F]{32}").exactMatch(configuration.value("api_hash").toString());
+        QRegExp("[0-9a-fA-F]{32}").exactMatch(configuration.value("api_hash").toString())) return true;
+#ifdef BERRYGRAM_DEVELOPMENT_TEST_API
+    return PrivateFile::read(QDir(m_dataDirectory).filePath("connection.json"), &configuration) &&
+        configuration.value("profile") == "development-test";
+#else
+    return false;
+#endif
 }
 
 QString TelegramSession::savedApiId() const
@@ -278,6 +284,7 @@ bool TelegramSession::configureAndRemember(const QString &apiId, const QString &
     configuration.insert("api_hash", apiHash.trimmed());
     if (!PrivateFile::write(QDir(m_dataDirectory).filePath("api.json"), configuration))
         m_error = ru("Подключение начато, но сохранить параметры API не удалось.");
+    else QFile::remove(QDir(m_dataDirectory).filePath("connection.json"));
     emit changed();
     return true;
 }
@@ -285,8 +292,13 @@ bool TelegramSession::configureAndRemember(const QString &apiId, const QString &
 bool TelegramSession::useSavedConfiguration()
 {
     QVariantMap configuration;
-    if (!PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration)) return false;
-    return configure(configuration.value("api_id").toString(), configuration.value("api_hash").toString());
+    if (PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration))
+        return configure(configuration.value("api_id").toString(), configuration.value("api_hash").toString());
+#ifdef BERRYGRAM_DEVELOPMENT_TEST_API
+    if (PrivateFile::read(QDir(m_dataDirectory).filePath("connection.json"), &configuration) &&
+        configuration.value("profile") == "development-test") return useTestConfiguration();
+#endif
+    return false;
 }
 
 bool TelegramSession::testConfigurationAvailable() const
@@ -303,8 +315,12 @@ bool TelegramSession::useTestConfiguration()
 #ifdef BERRYGRAM_DEVELOPMENT_TEST_API
     // Official, restricted TEST ONLY credentials, not another developer's keys.
     // https://github.com/telegramdesktop/tdesktop/blob/dev/docs/api_credentials.md
-    // Never persist them or enable this option in a release build.
-    return configure("17349", "344583e45741c457fe1862106095a5eb");
+    // Persist only the explicit profile choice, never the test credentials.
+    if (!configure("17349", "344583e45741c457fe1862106095a5eb")) return false;
+    QVariantMap profile; profile.insert("profile", "development-test");
+    if (!PrivateFile::write(QDir(m_dataDirectory).filePath("connection.json"), profile))
+        m_error = ru("Вход начат, но сохранить способ подключения не удалось.");
+    emit changed(); return true;
 #else
     return false;
 #endif
@@ -313,7 +329,9 @@ bool TelegramSession::useTestConfiguration()
 bool TelegramSession::forgetConfiguration()
 {
     const QString path = QDir(m_dataDirectory).filePath("api.json");
-    const bool result = !QFile::exists(path) || QFile::remove(path);
+    bool result = !QFile::exists(path) || QFile::remove(path);
+    const QString profile = QDir(m_dataDirectory).filePath("connection.json");
+    if (QFile::exists(profile) && !QFile::remove(profile)) result = false;
     emit changed();
     return result;
 }

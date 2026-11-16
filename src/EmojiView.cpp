@@ -26,26 +26,28 @@ Image emojiImage(const QString &path){
     Image image(file.readAll());cache.insert(path,new Image(image));return image;
 }
 }
-EmojiView::EmojiView(Container *parent):CustomControl(parent),m_root(new Container),m_ink("#202b33"),m_offset(0),m_width(500),m_pixels(28),m_textSize(1),m_pending(false){
+EmojiView::EmojiView(Container *parent):CustomControl(parent),m_root(new Container),m_ink("#202b33"),m_offset(0),m_width(500),m_pixels(28),m_textSize(1),m_pending(false),m_fillWidth(false){
     m_root->setLayout(new AbsoluteLayout);setRoot(m_root);
 }
 void EmojiView::schedule(){if(!m_pending){m_pending=true;QTimer::singleShot(0,this,SLOT(rebuild()));}}
+void EmojiView::setFillWidth(bool value){if(m_fillWidth==value)return;m_fillWidth=value;schedule();}
 void EmojiView::setFormatted(const QVariantMap &v){if(m_formatted==v)return;m_formatted=v;schedule();}
 void EmojiView::setText(const QString &v){if(v==m_text)return;m_text=v;schedule();}
 void EmojiView::setTextWidth(qreal v){v=qBound(qreal(20),v,qreal(1500));if(v==m_width)return;m_width=v;schedule();}
 void EmojiView::setPixelSize(int v){v=qBound(8,v,72);if(v==m_pixels)return;m_pixels=v;schedule();}
 void EmojiView::setTextSize(int v){v=qBound(0,v,2);if(v==m_textSize)return;m_textSize=v;schedule();}
 void EmojiView::setInk(const QString &v){if(v==m_ink)return;m_ink=v;schedule();}
-void EmojiView::word(const QString &text){
+void EmojiView::word(const QString &text,bool paragraph){
     if(text.isEmpty())return;
     Label *label=new Label;
     const bool styled=m_formatted.value("text").toString()==m_text && !m_formatted.value("entities").toList().isEmpty();
     if(styled){ActiveTextHandler *handler=new ActiveTextHandler(label);label->setActiveTextHandler(handler);connect(handler,SIGNAL(triggered(bb::cascades::ActiveTextTriggeredEvent*)),this,SLOT(activateLink(bb::cascades::ActiveTextTriggeredEvent*)));}
     label->setText(styled?FormattedText::html(text,m_offset,m_formatted):text);label->setTextFormat(styled?TextFormat::Html:TextFormat::Plain);label->setMultiline(true);m_offset+=text.size();
+    if(paragraph){label->setPreferredWidth(m_width);label->setMinWidth(m_width);}
     label->setMaxWidth(m_width);label->textStyle()->setFontSize(m_textSize==0?FontSize::Small:m_textSize==2?FontSize::Large:FontSize::Medium);label->textStyle()->setColor(Color::fromARGB(QColor(m_ink).rgba()));
     label->setTopMargin(0);label->setBottomMargin(0);label->setLeftMargin(0);label->setRightMargin(0);
     label->setLayoutProperties(new AbsoluteLayoutProperties);
-    m_root->add(label);Part part;part.control=label;part.size=QSizeF(qMin(m_width,qreal(text.size()*m_pixels*.55)),m_pixels*1.4);m_parts.append(part);
+    m_root->add(label);Part part;part.control=label;part.size=QSizeF(paragraph?m_width:qMin(m_width,qreal(text.size()*m_pixels*.55)),m_pixels*1.4);m_parts.append(part);
     LayoutUpdateHandler *handler=new LayoutUpdateHandler(label);
     connect(handler,SIGNAL(layoutFrameChanged(QRectF)),this,SLOT(measured(QRectF)));
 }
@@ -54,7 +56,7 @@ void EmojiView::rebuild(){
     foreach(const Part &part,m_parts)if(part.control)disconnect(part.control,0,this,0);
     m_parts.clear();m_root->removeAll();
     const QVariantList tokens=EmojiRenderer::parts(m_text,":/emoji");
-    if(tokens.size()==1 && !tokens.first().toMap().contains("emoji")){word(m_text);arrange();emit changed();return;}
+    if(tokens.size()==1 && !tokens.first().toMap().contains("emoji")){word(m_text,m_fillWidth);arrange();emit changed();return;}
     foreach(const QVariant &value,tokens){
         const QVariantMap token=value.toMap();
         if(token.contains("emoji")){
@@ -95,5 +97,5 @@ void EmojiView::arrange(){
         }
         x+=part.size.width();line=qMax(line,part.size.height());
     }
-    widest=qMax(widest,x);setPreferredWidth(qMin(m_width,widest));setPreferredHeight(m_text.isEmpty()?0:y+line);
+    widest=qMax(widest,x);setPreferredWidth(m_fillWidth?m_width:qMin(m_width,widest));setPreferredHeight(m_text.isEmpty()?0:y+line);
 }

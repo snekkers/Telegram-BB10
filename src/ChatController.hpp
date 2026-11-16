@@ -52,6 +52,7 @@ class ChatController : public QObject
     Q_PROPERTY(QVariantMap selectionState READ selectionState NOTIFY currentChatChanged)
     Q_PROPERTY(QString selectedText READ selectedText NOTIFY currentChatChanged)
     Q_PROPERTY(bool composerVisible READ composerVisible NOTIFY currentChatChanged)
+    Q_PROPERTY(bool currentChatWide READ currentChatWide NOTIFY currentChatChanged)
 
 public:
     explicit ChatController(QObject *parent = 0);
@@ -107,6 +108,7 @@ public:
     bool currentStatusActive() const;
     QString currentAvatarKey() const;
     bool composerVisible() const {return m_currentChatId!="demo-design";}
+    bool currentChatWide() const {return m_currentChatId=="demo-project" || m_currentChatId=="demo-design" || m_currentChatId=="demo-bb10";}
     Q_INVOKABLE void loadContacts();
     Q_INVOKABLE void setContactQuery(const QString &text){const QString next=text.trimmed().left(128);if(next==m_contactQuery)return;m_contactQuery=next;refreshContacts();}
     Q_INVOKABLE void setContactSection(int section){m_contactSection=section;refreshContacts();}
