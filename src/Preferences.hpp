@@ -14,6 +14,8 @@ class Preferences:public QObject {
     Q_PROPERTY(bool sendOnEnter READ sendOnEnter WRITE setSendOnEnter NOTIFY changed)
     Q_PROPERTY(int textSize READ textSize WRITE setTextSize NOTIFY changed)
     Q_PROPERTY(int photoCacheMb READ photoCacheMb WRITE setPhotoCacheMb NOTIFY changed)
+    Q_PROPERTY(bool autoDownloadWifi READ autoDownloadWifi WRITE setAutoDownloadWifi NOTIFY changed)
+    Q_PROPERTY(bool autoDownloadMobile READ autoDownloadMobile WRITE setAutoDownloadMobile NOTIFY changed)
 public:
     explicit Preferences(QObject *parent=0);
     QString error() const{return m_error;}
@@ -27,6 +29,10 @@ public:
     bool sendOnEnter() const{return m_values.value("sendOnEnter",true).toBool();}
     int textSize() const{return m_values.value("textSize",1).toInt();}
     int photoCacheMb() const{return m_values.value("photoCacheMb",24).toInt();}
+    bool autoDownloadWifi() const{return m_values.value("autoDownloadWifi",false).toBool();}
+    bool autoDownloadMobile() const{return m_values.value("autoDownloadMobile",false).toBool();}
+    void setAutoDownloadWifi(bool v){set("autoDownloadWifi",v);}
+    void setAutoDownloadMobile(bool v){set("autoDownloadMobile",v);}
     void setHidePreview(bool v){set("hidePreview",v);}void setSendOnEnter(bool v){set("sendOnEnter",v);}
     void setTextSize(int v){set("textSize",qBound(0,v,2));}
     void setPhotoCacheMb(int v){if(v==8||v==24||v==64)set("photoCacheMb",v);}

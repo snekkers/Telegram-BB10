@@ -9,11 +9,22 @@
 #include <bb/multimedia/AudioChannelConfiguration>
 #include <bb/multimedia/MediaError>
 #include <bb/cascades/pickers/FileType>
+#include <QNetworkConfiguration>
+#include <QCoreApplication>
+#include <QRegExp>
+#include <bps/netstatus.h>
 
 TelegramController::TelegramController(TelegramStore *store, QObject *parent)
     : QObject(parent), m_store(store), m_chats(new bb::cascades::ArrayDataModel(this)),
       m_messages(new bb::cascades::ArrayDataModel(this)), m_infoRows(new bb::cascades::ArrayDataModel(this)), m_recipients(new bb::cascades::ArrayDataModel(this)), m_scrollSerial(0), m_incomingSerial(0), m_forwardSerial(0), m_contacts(new bb::cascades::ArrayDataModel(this)),m_recording(false)
 {
+    m_scheduled=new bb::cascades::ArrayDataModel(this);m_downloads=new bb::cascades::ArrayDataModel(this);m_autoWifi=m_autoMobile=false;
+    connect(store,SIGNAL(scheduledChanged()),this,SLOT(updateScheduled()));
+    connect(store,SIGNAL(downloadsChanged()),this,SLOT(updateDownloads()));
+    connect(&m_network,SIGNAL(onlineStateChanged(bool)),this,SLOT(networkChanged()));
+    connect(&m_network,SIGNAL(configurationChanged(QNetworkConfiguration)),this,SLOT(networkChanged()));
+    connect(&m_memoryProbe,SIGNAL(finished(int,QProcess::ExitStatus)),this,SLOT(memoryFinished()));
+    connect(&m_networkPoll,SIGNAL(timeout()),this,SLOT(networkChanged()));
     connect(store,SIGNAL(contactsChanged()),this,SLOT(updateContacts()));
     connect(store,SIGNAL(contactChatReady(QString)),this,SLOT(contactReady(QString)));
     connect(store,SIGNAL(infoChanged()),this,SLOT(updateInfoRows()));
@@ -31,6 +42,26 @@ TelegramController::TelegramController(TelegramStore *store, QObject *parent)
     m_recordLimit.setSingleShot(true);
     updateChats();
     updateMessages();
+}
+
+void TelegramController::updateScheduled(){reconcile(m_scheduled,m_store->scheduledMessages(),"messageId");emit changed();}
+void TelegramController::updateDownloads(){reconcile(m_downloads,m_store->downloads(),"fileId");emit changed();}
+void TelegramController::networkChanged(){
+    const QNetworkConfiguration config=m_network.defaultConfiguration();const QNetworkConfiguration::BearerType type=config.bearerType();
+    bool wifi=type==QNetworkConfiguration::BearerWLAN,known=config.isValid() && m_network.isOnline() && (wifi || type==QNetworkConfiguration::Bearer2G || type==QNetworkConfiguration::BearerCDMA2000 || type==QNetworkConfiguration::BearerWCDMA || type==QNetworkConfiguration::BearerHSPA || type==QNetworkConfiguration::BearerWiMAX);
+    netstatus_interface_details_t *details=0;
+    if(netstatus_get_interface_details(0,&details)==BPS_SUCCESS && details){const netstatus_interface_type_t kind=netstatus_interface_get_type(details);wifi=kind==NETSTATUS_INTERFACE_TYPE_WIFI;known=wifi || kind==NETSTATUS_INTERFACE_TYPE_CELLULAR;netstatus_free_interface_details(&details);}
+    m_networkLabel=wifi?QString::fromUtf8("Wi-Fi"):known?QString::fromUtf8("Мобильная сеть"):QString::fromUtf8("Тип сети не определён");
+    m_store->setAutoDownload(known && (wifi?m_autoWifi:m_autoMobile));m_store->autoDownload();
+}
+void TelegramController::refreshDiagnostics(){
+    m_diagnostics=m_store->diagnostics()+QString::fromUtf8("\nСеть: ")+m_networkLabel;emit changed();
+    if(m_memoryProbe.state()==QProcess::NotRunning)m_memoryProbe.start("pidin",QStringList()<<"-p"<<QString::number(QCoreApplication::applicationPid())<<"mem");
+}
+void TelegramController::memoryFinished(){
+    const QStringList lines=QString::fromLocal8Bit(m_memoryProbe.readAllStandardOutput()).split('\n');m_memoryProbe.readAllStandardError();
+    if(lines.size()>1){const QStringList fields=lines.at(1).simplified().split(' ');if(fields.size()>6 && QRegExp("[0-9]+[KMG]?").exactMatch(fields.at(6)))m_diagnostics+=QString::fromUtf8("\nПамять процесса: ")+fields.at(6);}
+    emit changed();
 }
 
 void TelegramController::reconcile(bb::cascades::ArrayDataModel *model, const QVariantList &rows, const QString &key)

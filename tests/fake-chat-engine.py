@@ -30,6 +30,11 @@ held_media = []
 sent_count = 0
 last_only_local = False
 last_send = None
+scheduled_text = "Later fixture"
+scheduled_date = int(time.time())+3600
+scheduled_cancelled = False
+hold_download = False
+held_downloads = []
 library_path = Path(sys.argv[sys.argv.index("--library") + 1])
 
 def media_file(completed=False, path=""):
@@ -189,6 +194,8 @@ for line in sys.stdin:
               "last_read_inbox_message_id": query["message_ids"][-1], "unread_count": 0})
         reply(query)
     elif kind == "downloadFile":
+        if hold_download and query["file_id"]==7:
+            held_downloads.append(query);continue
         if query["file_id"] in (77,78):
             people_calls.append(query);assert query["limit"]==1024*1024 and query["priority"]==8 and query["offset"]==0 and query["synchronous"] is False
             directory=library_path.parent/"private/files";directory.mkdir(parents=True,exist_ok=True)
@@ -229,11 +236,23 @@ for line in sys.stdin:
         assert query["chat_limit"] == 0
         rows=[{"@type":"storageStatisticsByFileType","file_type":{"@type":"fileTypePhoto"},"size":2097152,"count":2},{"@type":"storageStatisticsByFileType","file_type":{"@type":"fileTypeDocument"},"size":1048576,"count":1}]
         reply(query,"storageStatistics",size=3145728,count=3,by_chat=[{"@type":"storageStatisticsByChat","chat_id":0,"size":3145728,"count":3,"by_file_type":rows}])
+    elif kind == "getChatScheduledMessages":
+        actions.append(query)
+        value=message(7100,query["chat_id"],scheduled_text,True)
+        value["scheduling_state"]={"@type":"messageSchedulingStateSendAtDate","send_date":scheduled_date,"repeat_period":0}
+        reply(query,"messages",total_count=0 if scheduled_cancelled else 1,messages=[] if scheduled_cancelled else [value])
+    elif kind == "editMessageSchedulingState":
+        actions.append(query);assert query["message_id"]==7100
+        scheduled_date=query["scheduling_state"]["send_date"];reply(query)
+    elif kind == "cancelDownloadFile":
+        actions.append(query);assert query["only_if_pending"] is False;reply(query)
     elif kind == "getMessageProperties":
         actions.append(query)
         reply(query,"messageProperties",can_be_replied=True,can_be_forwarded=query["message_id"]!=999,can_be_edited=query["message_id"]==50,can_be_saved=True,can_be_deleted_only_for_self=query["message_id"]!=999 and not only_all_delete,can_be_deleted_for_all_users=query["message_id"]==50)
     elif kind == "deleteMessages":
         actions.append(query)
+        if query["message_ids"]==[7100]:
+            assert query["revoke"] is True;scheduled_cancelled=True;reply(query);continue
         if only_all_delete:assert query["revoke"] is True
         assert query["chat_id"]==A and query["message_ids"] and isinstance(query["revoke"],bool)
         if query["revoke"]:assert query["message_ids"]==[50]
@@ -241,6 +260,11 @@ for line in sys.stdin:
         reply(query)
     elif kind == "editMessageText":
         actions.append(query)
+        if query["message_id"]==7100:
+            assert query["reply_markup"] is None
+            scheduled_text=query["input_message_content"]["text"]["text"]
+            value=message(7100,query["chat_id"],scheduled_text,True);value["scheduling_state"]={"@type":"messageSchedulingStateSendAtDate","send_date":scheduled_date,"repeat_period":0}
+            reply(query,"message",**{k:v for k,v in value.items() if k!="@type"});continue
         assert query["message_id"]==50 and query["reply_markup"] is None
         body=query["input_message_content"];assert body["@type"]=="inputMessageText"
         value=message(50,query["chat_id"],body["text"]["text"],True);value["edit_date"]=1700009999
@@ -398,7 +422,13 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "messageBurst":
+        if op == "holdDownload":
+            hold_download=True
+        elif op == "releaseDownload":
+            hold_download=False
+            for pending in held_downloads:reply(pending,"file",id=7,size=68,local={"is_downloading_completed":False,"is_downloading_active":False,"downloaded_size":0,"path":""})
+            held_downloads.clear()
+        elif op == "messageBurst":
             events=[{"@type":"updateNewMessage","message":message(10000+query.get("event",{}).get("base",0)+i,A)} for i in range(600)]
             sys.stdout.write("".join(json.dumps(e,ensure_ascii=False)+"\n" for e in events));sys.stdout.flush()
         elif op == "pinFixture":

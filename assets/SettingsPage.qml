@@ -13,6 +13,12 @@ Page {
             background: Color.create(_prefs.surface)
             leftPadding: ui.du(2);rightPadding: ui.du(2)
             Label {visible: _prefs.error.length>0;text: _prefs.error;multiline: true;textStyle.color: Color.create("#b3261e")}
+            Button {text: qsTr("Соединение и диагностика");onClicked: navigation.openDiagnostics()}
+            Button {text: qsTr("Загрузки");onClicked: navigation.openDownloads()}
+            Label {text: qsTr("Автозагрузка фото и голосовых до 5 МБ");multiline: true}
+            CheckBox {text: qsTr("По Wi-Fi");checked: _prefs.autoDownloadWifi;onCheckedChanged: {_prefs.autoDownloadWifi=checked;_live.configureAutoDownloads(_prefs.autoDownloadWifi,_prefs.autoDownloadMobile);}}
+            CheckBox {text: qsTr("По мобильной сети");checked: _prefs.autoDownloadMobile;onCheckedChanged: {_prefs.autoDownloadMobile=checked;_live.configureAutoDownloads(_prefs.autoDownloadWifi,_prefs.autoDownloadMobile);}}
+            Label {text: qsTr("Автозагрузка работает в открытом чате. Документы скачиваются вручную.");multiline: true;textStyle.color: Color.create(_prefs.secondary)}
             CheckBox {objectName: "darkSetting";text: qsTr("Тёмная тема");checked: _prefs.dark;onCheckedChanged: _prefs.dark=checked}
             CheckBox {objectName: "previewSetting";text: qsTr("Скрывать текст уведомлений");checked: _prefs.hidePreview;onCheckedChanged: _prefs.hidePreview=checked}
             CheckBox {objectName: "enterSetting";text: qsTr("Отправлять по Enter");checked: _prefs.sendOnEnter;onCheckedChanged: _prefs.sendOnEnter=checked}

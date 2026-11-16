@@ -34,6 +34,7 @@ fi
 
 echo "Loading BB10 SDK: $SDK_ENV"
 source "$SDK_ENV"
+bash /source/scripts/container-voice-codecs.sh "$TARGET_PLATFORM"
 
 BUILD_DIRECTORY="/output/$TARGET_PLATFORM"
 mkdir -p "$BUILD_DIRECTORY"

@@ -1,0 +1,9 @@
+TEMPLATE = app
+TARGET = voice-tests
+QT = core testlib
+CONFIG += console testcase c++11
+CONFIG -= app_bundle
+INCLUDEPATH += ../src /usr/include/opus
+SOURCES += voice-tests.cpp ../src/VoiceDecoder.cpp
+HEADERS += ../src/VoiceDecoder.hpp
+LIBS += -lopusfile -lopus -logg

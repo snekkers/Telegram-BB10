@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QProcess>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QVariantMap>
 
 // Qt 4/C++98 boundary. TDLib and its GNU C++ runtime live only in the child.
@@ -18,6 +19,7 @@ class TelegramSession : public QObject {
     Q_PROPERTY(bool hasSavedConfiguration READ hasSavedConfiguration NOTIFY changed)
     Q_PROPERTY(QString savedApiId READ savedApiId NOTIFY changed)
     Q_PROPERTY(bool testConfigurationAvailable READ testConfigurationAvailable CONSTANT)
+    Q_PROPERTY(QString diagnostics READ diagnostics NOTIFY changed)
 
 public:
     explicit TelegramSession(QObject *parent = 0);
@@ -37,6 +39,9 @@ public:
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
+    Q_INVOKABLE void reconnect();
+    Q_INVOKABLE void refreshDiagnostics(){emit changed();}
+    QString diagnostics() const;
     Q_INVOKABLE bool configure(const QString &apiId, const QString &apiHash);
     Q_INVOKABLE bool configureAndRemember(const QString &apiId, const QString &apiHash);
     Q_INVOKABLE bool useSavedConfiguration();
@@ -59,6 +64,7 @@ private slots:
     void processError(QProcess::ProcessError error);
     void finished(int code, QProcess::ExitStatus exitStatus);
     void timedOut();
+    void restartAfterClose();
 
 private:
     void initialize();
@@ -77,6 +83,11 @@ private:
     QByteArray m_input;
     unsigned m_sequence;
     bool m_busy, m_stopping, m_failed, m_readQueued;
+    bool m_restartRequested;
+    bool m_resumeRuntime;
+    QString m_runtimeApiId,m_runtimeApiHash;
+    QElapsedTimer m_uptime;
+    quint64 m_receivedEvents, m_receivedBytes;
     Q_DISABLE_COPY(TelegramSession)
 };
 #endif

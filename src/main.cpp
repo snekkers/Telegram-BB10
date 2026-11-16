@@ -11,6 +11,7 @@
 #include "MediaController.hpp"
 #include "EmojiCatalog.hpp"
 #include "Preferences.hpp"
+#include "VoicePlayer.hpp"
 #include <QResource>
 
 #include <bb/cascades/AbstractPane>
@@ -40,6 +41,7 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     Preferences preferences;
     EmojiCatalog emoji;
     MediaController media(&store,&controller);
+    VoicePlayer voice(&store);
     NotificationCenter notifications(&telegram,&store,&preferences);
     media.setCacheLimit(preferences.photoCacheMb());
     AvatarProvider avatars(&store);
@@ -54,6 +56,7 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     document->setContextProperty("_prefs", &preferences);
     document->setContextProperty("_emoji", &emoji);
     document->setContextProperty("_media", &media);
+    document->setContextProperty("_voice", &voice);
     document->setContextProperty("_notifications", &notifications);
     document->setContextProperty("_chat", &controller);
     document->setContextProperty("_telegram", &telegram);

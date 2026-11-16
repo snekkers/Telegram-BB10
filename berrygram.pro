@@ -76,3 +76,12 @@ HEADERS += $$PWD/src/Preferences.hpp
 HEADERS += $$PWD/src/FormattedText.hpp
 
 SOURCES += $$PWD/src/TelegramReactions.cpp
+
+SOURCES += $$PWD/src/TelegramTools.cpp
+QT += network
+SOURCES += $$PWD/src/VoiceDecoder.cpp $$PWD/src/VoicePlayer.cpp
+HEADERS += $$PWD/src/VoiceDecoder.hpp $$PWD/src/VoicePlayer.hpp
+device: VOICE_PREFIX = $$PWD/build/device/voice-codecs
+simulator: VOICE_PREFIX = $$PWD/build/simulator/voice-codecs
+INCLUDEPATH += $$VOICE_PREFIX/include $$VOICE_PREFIX/include/opus
+LIBS += -L$$VOICE_PREFIX/lib -lopusfile -lopus -logg -lm

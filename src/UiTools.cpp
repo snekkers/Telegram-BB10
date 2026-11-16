@@ -165,7 +165,9 @@ void UiTools::checkRequest()
                 }else if(field=="font"){DropDown *drop=page->findChild<DropDown*>("fontSetting");if(drop){drop->setSelectedIndex(qBound(0,request.value("value").toInt(),2));ok=true;}}
             }else if(action=="feature-preview"){
                 const QString feature=request.value("feature").toString();
-                if(feature=="schedule" || feature=="reactions")ok=QMetaObject::invokeMethod(navigation,"previewFeature",Q_ARG(QVariant,QVariant(feature)));
+                if(feature=="schedule" || feature=="reactions" || feature=="voice" || feature=="diagnostics" || feature=="downloads" || feature=="mute" || feature=="scheduled" || feature=="scheduled-editor")ok=QMetaObject::invokeMethod(navigation,"previewFeature",Q_ARG(QVariant,QVariant(feature)));
+            }else if(action=="voice-action" && page->objectName()=="voicePage"){
+                ok=QMetaObject::invokeMethod(page,"checkAction",Q_ARG(QVariant,QVariant(request.value("command"))),Q_ARG(QVariant,QVariant(request.value("value"))));
             }else if(action=="emoji-picker"){
                 ImageButton *button=page->findChild<ImageButton*>("emojiButton");ok=button && QMetaObject::invokeMethod(button,"clicked");
             }else if(action=="emoji-pick"){
@@ -281,6 +283,7 @@ void UiTools::finishCheck()
         navigation->property("demo").toBool() && (navigation->count()==1 ||
         navigation->top()->objectName()=="settingsPage" || navigation->top()->objectName()=="emojiPage" || navigation->top()->objectName()=="photoPage" ||
         navigation->top()->objectName()=="reactionPage" || navigation->top()->objectName()=="schedulePage" ||
+        navigation->top()->objectName()=="voicePage" || navigation->top()->objectName()=="diagnosticsPage" || navigation->top()->objectName()=="downloadsPage" || navigation->top()->objectName()=="mutePage" || navigation->top()->objectName()=="scheduledMessagesPage" || navigation->top()->objectName()=="scheduledEditorPage" ||
         navigation->top()->objectName()=="searchPage" ||
         navigation->top()->objectName()=="contactsPage" ||
         navigation->top()->objectName()=="chatInfoPage" || navigation->top()->objectName()=="forwardPage" ||
@@ -288,6 +291,9 @@ void UiTools::finishCheck()
     if(demoPage) {
         Page *page=navigation->top();
         m_result.insert("page",page->objectName());
+        if(page->objectName()=="voicePage"){
+            m_result.insert("voice_playing",page->property("voicePlaying"));m_result.insert("voice_loading",page->property("voiceLoading"));m_result.insert("voice_duration",page->property("voiceDuration"));m_result.insert("voice_position",page->property("voicePosition"));m_result.insert("voice_speed",page->property("voiceSpeed"));m_result.insert("voice_status",page->property("voiceStatus"));
+        }
         m_result.insert("action_bar_hidden",page->actionBarVisibility()==ChromeVisibility::Hidden);
         m_result.insert("menu_state",int(page->actionMenuVisualState()));
         TextArea *field=page->findChild<TextArea*>("messageField");

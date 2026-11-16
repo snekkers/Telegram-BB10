@@ -112,6 +112,9 @@ TelegramStore::TelegramStore(TelegramSession *session, QObject *parent, int requ
       m_chatsEnd(false), m_historyEnd(false), m_online(true), m_archiveView(false), m_archiveEnd(false), m_infoLoading(false), m_infoEnd(true)
 {
     m_pinnedSerial=0;m_reactionSerial=0;
+    m_scheduledBusy=m_scheduledOpen=m_autoDownload=false;m_scheduledSerial=m_downloadSerial=0;
+    m_autoWifiAllowed=m_autoMobileAllowed=false;
+    m_completedRequests=m_timedOutRequests=m_requestLatency=0;
     m_batching=m_chatsDirty=m_messagesDirty=false;
     m_lastReadSubmitted=0;
     m_followingLatest=true;m_scrollPending=false;m_pendingIncoming=0;m_historyLocalEnd=false;
@@ -144,6 +147,7 @@ void TelegramStore::suspendLocalSends()
 
 void TelegramStore::reset()
 {
+    closeScheduled();m_downloads.clear();m_autoSuppressed.clear();emit downloadsChanged();
     suspendLocalSends(); m_account.clear(); m_localMessages.clear();
     ++m_generation;
     m_selected.clear();m_selectionState.clear();m_storageSummary.clear();
@@ -212,6 +216,7 @@ QString TelegramStore::submit(QVariantMap object, const QString &kind, const QSt
     pending.insert("chatId", chatId);
     pending.insert("generation", m_generation);
     pending.insert("deadline", m_clock.elapsed() + m_requestTimeoutMs);
+    pending.insert("started",m_clock.elapsed());
     m_requests.insert(id, pending);
     return id;
 }
@@ -538,6 +543,7 @@ bool TelegramStore::openChatAt(const QString &id, const QString &messageId)
 
 void TelegramStore::closeChat()
 {
+    closeScheduled();
     flushDrafts();
     if (m_ready && !m_current.isEmpty()) {
         QVariantMap call = method("closeChat");
@@ -697,6 +703,7 @@ QVariantMap TelegramStore::mediaInfo(const QVariantMap &content) const
 
 void TelegramStore::updateFile(const QVariantMap &file)
 {
+    updateDownload(file);
     updateAvatarFile(file);
     const int id = file.value("id").toInt();
     if (id <= 0) return;
@@ -739,12 +746,18 @@ bool TelegramStore::downloadMedia(const QString &messageId)
         emit changed(); return false;
     }
     if (m_downloading.contains(id)) return true;
+    if(m_downloading.size()>=4){m_error=ru("Дождитесь завершения одной из четырёх загрузок.");emit changed();return false;}
     QVariantMap call = method("downloadFile");
     call.insert("file_id", id); call.insert("priority", 16); call.insert("offset", 0);
     call.insert("limit", 50 * 1024 * 1024); call.insert("synchronous", false);
     const QString request = submit(call, "download", m_current);
     if (request.isEmpty()) return false;
     m_requests[request].insert("fileId", id); m_downloading.insert(id);
+    QVariantMap item=media;item.insert("chatId",m_current);item.insert("messageId",messageId);item.insert("status",ru("Загрузка…"));item.insert("active",true);
+    m_downloads.insert(id,item);m_autoSuppressed.remove(id);
+    m_downloads[id].insert("serial",++m_downloadSerial);m_requests[request].insert("fileSerial",m_downloadSerial);
+    while(m_downloads.size()>64){bool removed=false;foreach(const int key,m_downloads.keys())if(!m_downloads.value(key).value("active").toBool() && !m_downloads.value(key).value("cancelPending").toBool()){m_downloads.remove(key);m_autoSuppressed.remove(key);removed=true;break;}if(!removed)break;}
+    emit downloadsChanged();
     return true;
 }
 
@@ -853,6 +866,7 @@ void TelegramStore::endBatch(){
     if(m_scrollPending){m_scrollPending=false;emit scrollRequested();}
     const int incoming=m_pendingIncoming;m_pendingIncoming=0;
     for(int i=0;i<incoming;++i)emit incomingMessage();
+    autoDownload();
 }
 void TelegramStore::requestScroll(){if(m_batching)m_scrollPending=true;else emit scrollRequested();}
 void TelegramStore::notifyIncoming(){if(m_batching)++m_pendingIncoming;else emit incomingMessage();}
@@ -1057,6 +1071,8 @@ void TelegramStore::flushDrafts()
 
 void TelegramStore::response(const QVariantMap &object, const QVariantMap &pending)
 {
+    ++m_completedRequests;m_requestLatency+=qMax(qlonglong(0),m_clock.elapsed()-pending.value("started").toLongLong());
+    if(toolsResponse(object,pending))return;
     if(peopleResponse(object,pending))return;
     if(actionResponse(object,pending))return;
     const QString type = object.value("@type").toString();
@@ -1137,8 +1153,12 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
             m_storageSummary=ru("Фото: %1 МБ · документы: %2 МБ · всего файлов: %3 МБ").arg(double(photos)/(1024*1024),0,'f',1).arg(double(documents)/(1024*1024),0,'f',1).arg(double(object.value("size").toLongLong())/(1024*1024),0,'f',1);
         }
     } else if (kind == "download") {
+        const int trackedId=pending.value("fileId").toInt();
+        if(m_downloads.contains(trackedId) && pending.value("fileSerial").toUInt()!=m_downloads.value(trackedId).value("serial").toUInt())return;
         if (error) {
             m_downloading.remove(pending.value("fileId").toInt());
+            const int fileId=pending.value("fileId").toInt();
+            if(m_downloads.contains(fileId)){m_downloads[fileId].insert("active",false);m_downloads[fileId].insert("status",ru("Не удалось скачать. Можно повторить."));emit downloadsChanged();}
             if (chat == m_current) m_error = ru("Вложение не загрузилось (код %1).").arg(object.value("code").toInt());
         } else if (type == "file") updateFile(object);
     } else if (kind == "draft") {
@@ -1387,7 +1407,11 @@ void TelegramStore::expireRequests()
         QVariantMap &pending = it.value();
         if (pending.value("expired").toBool() || pending.value("deadline").toLongLong() > now) { ++it; continue; }
         expiredAny = true;
+        ++m_timedOutRequests;
         const QString kind = pending.value("kind").toString();
+        if((kind=="download" || kind=="download-cancel") && m_downloads.contains(pending.value("fileId").toInt()) && pending.value("fileSerial")!=m_downloads.value(pending.value("fileId").toInt()).value("serial")){
+            it=m_requests.erase(it);continue;
+        }
         const bool current = pending.value("chatId") == m_current && pending.value("generation").toUInt() == m_generation;
         if (kind == "send" || kind=="edit" || kind=="forward") {
             pending.insert("expired", true); // Keep correlation for a late answer; never resend automatically.
@@ -1405,6 +1429,9 @@ void TelegramStore::expireRequests()
             if (kind == "draft") m_draftInFlight.remove(pending.value("chatId").toString());
             if(kind=="storage")m_storageSummary=ru("Подсчёт файлов не ответил. Повторите.");
             if (kind == "download") m_downloading.remove(pending.value("fileId").toInt());
+            if(kind=="download"){const int id=pending.value("fileId").toInt();m_downloads[id].insert("active",false);m_downloads[id].insert("status",ru("Нет ответа. Можно повторить."));emit downloadsChanged();}
+            if(kind=="download-cancel"){const int id=pending.value("fileId").toInt();if(m_downloads.contains(id)){m_downloads[id].insert("cancelPending",false);m_downloads[id].insert("status",ru("Нет ответа об отмене. Проверьте файл."));emit downloadsChanged();}}
+            if(kind.startsWith("scheduled-") && pending.value("scheduledSerial").toUInt()==m_scheduledSerial){m_scheduledBusy=false;m_scheduledStatus=ru("Нет ответа. Обновите список, чтобы проверить результат.");emit scheduledChanged();}
             if(kind.startsWith("info") && pending.value("infoSerial").toUInt()==m_infoSerial) {m_infoLoading=false;m_infoError=ru("Сведения не ответили вовремя. Можно повторить.");emit infoChanged();}
             if(kind=="contacts"){m_contactsLoading=false;m_contactsError=ru("Контакты не ответили вовремя. Можно повторить.");emit contactsChanged();}
             if(kind=="contact-open" && pending.value("contactSerial").toUInt()==m_contactSerial){m_openingContact=false;m_contactsError=ru("Не удалось открыть диалог. Повторите.");emit contactsChanged();}

@@ -32,6 +32,7 @@ Page {
                 Label {visible: infoPage.detail.group===true;text: (infoPage.detail.channel?qsTr("Подписчиков: "):qsTr("Участников: "))+(infoPage.detail.memberCount || "…");textStyle.color: Color.create(_prefs.secondary)}
                 Label {text: infoPage.detail.description || qsTr("Нет описания");textFormat: TextFormat.Plain;multiline: true}
                 Button {objectName: "notificationsButton";horizontalAlignment: HorizontalAlignment.Fill;enabled: infoPage.detail.notificationsKnown===true;text: !enabled?qsTr("Уведомления: загрузка…"):infoPage.detail.notificationsOn?qsTr("Уведомления включены"):qsTr("Уведомления выключены");onClicked: infoPage.source.setNotifications(!infoPage.detail.notificationsOn)}
+                Button {text: qsTr("Отключить уведомления на время");visible: infoPage.liveChat;enabled: infoPage.detail.notificationsKnown===true;onClicked: navigation.openMute()}
                 Button {objectName: "pinChatButton";horizontalAlignment: HorizontalAlignment.Fill;text: infoPage.detail.pinned?qsTr("Открепить чат"):qsTr("Закрепить чат");onClicked: infoPage.source.setPinned(infoPage.detail.chatId,!infoPage.detail.pinned)}
                 Button {objectName: "archiveChatButton";horizontalAlignment: HorizontalAlignment.Fill;text: infoPage.detail.archived?qsTr("Вернуть из архива"):qsTr("В архив");onClicked: infoPage.source.setArchived(infoPage.detail.chatId,!infoPage.detail.archived)}
             }

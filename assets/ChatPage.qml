@@ -133,6 +133,8 @@ Page {
         onMenuRequested: _ui.openMenu(chatPage)
     }
     actions: [
+        ActionItem {title: qsTr("Отложенные сообщения");imageSource: "asset:///icons/history-white.png";enabled: chatPage.liveChat && _live.ready;onTriggered: navigation.openScheduled()},
+        ActionItem {title: qsTr("Загрузки");imageSource: "asset:///icons/attach-white.png";enabled: chatPage.liveChat;onTriggered: navigation.openDownloads()},
         ActionItem {objectName: "scheduleAction";title: qsTr("Отложить отправку");imageSource: "asset:///icons/history-white.png";enabled: chatPage.liveChat && chatPage.composerContext.mode!=="edit" && _live.canSendSelected;onTriggered: navigation.openSchedule(chatPage)},
         ActionItem {objectName: "demoPhotoAction";title: qsTr("Просмотр фото · демо");enabled: !chatPage.liveChat;onTriggered: navigation.openPhoto("demo-photo-0",false)},
         ActionItem { objectName: "chatInfoAction"; title: qsTr("Сведения о чате"); imageSource: "asset:///icons/info-white.png"; onTriggered: navigation.openChatInfo(chatPage.liveChat) },
@@ -230,6 +232,7 @@ Page {
                 }
             ]
             function downloadMedia(id) { _live.downloadMedia(id); }
+            function openVoice(id){navigation.openVoice(id);}
             function openMedia(id) { _live.openMedia(id); }
             function openReply(chat,id){chatPage.openReply(chat,id);}
             function openReactions(id){if(chatPage.liveChat)navigation.openReactions(id);}
@@ -374,6 +377,7 @@ Page {
                                 text: visible && ListItemData.media.path.length > 0 ? qsTr("Открыть вложение") : qsTr("Скачать вложение")
                                 onClicked: {
                                     if(ListItemData.media.kind==="photo")messageItem.ListItem.view.openPhoto(ListItemData.messageId);
+                                    else if (ListItemData.media.path.length > 0 && ListItemData.media.kind==="voice")messageItem.ListItem.view.openVoice(ListItemData.messageId);
                                     else if (ListItemData.media.path.length > 0) messageItem.ListItem.view.openMedia(ListItemData.messageId);
                                     else messageItem.ListItem.view.downloadMedia(ListItemData.messageId);
                                 }

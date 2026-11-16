@@ -42,6 +42,7 @@ TelegramSession::TelegramSession(const QString &engine, const QString &library,
 void TelegramSession::initialize()
 {
     m_sequence = 0;
+    m_restartRequested=m_resumeRuntime=false;m_receivedEvents=m_receivedBytes=0;m_uptime.start();
     m_readQueued = false;
     m_busy = m_stopping = m_failed = false;
     m_phase = "stopped";
@@ -248,8 +249,10 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.14.0.19");
-    return authenticate(parameters);
+    parameters.insert("application_version", "0.15.0.20");
+    const bool accepted=authenticate(parameters);
+    if(accepted){m_runtimeApiId=apiId.trimmed();m_runtimeApiHash=hash;}
+    return accepted;
 }
 
 bool TelegramSession::hasSavedConfiguration() const
@@ -359,6 +362,7 @@ void TelegramSession::readOutput()
         while (processed < 64 && (end = m_input.indexOf('\n')) >= 0) {
             ++processed;
             QByteArray line = m_input.left(end);
+            ++m_receivedEvents;m_receivedBytes+=line.size();
             m_input.remove(0, end + 1);
             if (line.endsWith('\r'))
                 line.chop(1);
@@ -436,8 +440,10 @@ void TelegramSession::authorization(const QVariantMap &state)
     m_pending.clear(); // A state update can precede the response to its request.
     m_busy = false;
     m_error.clear();
-    if (type == "authorizationStateWaitTdlibParameters")
+    if (type == "authorizationStateWaitTdlibParameters") {
         setPhase("parameters", ru("Введите параметры приложения Telegram"));
+        if(m_resumeRuntime){m_resumeRuntime=false;if(!m_busy && !m_runtimeApiId.isEmpty())configure(m_runtimeApiId,m_runtimeApiHash);}
+    }
     else if (type == "authorizationStateWaitPhoneNumber")
         setPhase("phone", ru("Введите номер существующего аккаунта с кодом страны"));
     else if (type == "authorizationStateWaitCode")
@@ -516,6 +522,21 @@ void TelegramSession::finished(int code, QProcess::ExitStatus exitStatus)
         setPhase("failed", ru("Ошибка Telegram-движка"));
     } else
         emit changed();
+    if(m_restartRequested)QTimer::singleShot(0,this,SLOT(restartAfterClose()));
+}
+
+void TelegramSession::reconnect(){
+    if(m_restartRequested)return;
+    m_restartRequested=true;
+    if(m_process.state()==QProcess::NotRunning)restartAfterClose();else stop();
+}
+void TelegramSession::restartAfterClose(){
+    if(!m_restartRequested || m_process.state()!=QProcess::NotRunning)return;
+    m_restartRequested=false;m_resumeRuntime=true;start();
+}
+QString TelegramSession::diagnostics() const{
+    return ru("Время работы: %1 мин\nСобытий: %2\nПолучено от движка: %3 КБ\nБуфер: %4 КБ\nОчередь передачи: %5 КБ")
+        .arg(m_uptime.elapsed()/60000).arg(m_receivedEvents).arg(m_receivedBytes/1024).arg(m_input.size()/1024).arg(m_process.bytesToWrite()/1024);
 }
 
 void TelegramSession::timedOut()

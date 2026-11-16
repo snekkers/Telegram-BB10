@@ -91,6 +91,42 @@ private:
     }
 
 private slots:
+    void cancelledDownloadsIgnoreOldRepliesAndCanBeRetried(){
+        Peer peer;ready(peer);open(peer);QVERIFY(!control(peer,"holdDownload").isEmpty());QVERIFY(peer.store.downloadMedia("20"));
+        QCOMPARE(peer.store.downloads().size(),1);QVERIFY(peer.store.downloads().first().toMap().value("active").toBool());
+        QVERIFY(peer.store.cancelDownload(7));QVERIFY(!peer.store.retryDownload(7));
+        QTRY_VERIFY(!peer.store.downloads().first().toMap().value("cancelPending").toBool());
+        QVERIFY(!control(peer,"releaseDownload").isEmpty());
+        QVERIFY(!peer.store.downloads().first().toMap().value("active").toBool());QVERIFY(peer.store.retryDownload(7));
+        QTRY_VERIFY(!peer.store.downloads().first().toMap().value("path").toString().isEmpty());
+        QCOMPARE(control(peer,"stats").value("send_count").toInt(),0);
+    }
+    void reconnectRestoresRuntimeConfigurationWithoutSending(){
+        Peer peer;ready(peer);open(peer);peer.store.setDraft("Keep across reconnect");peer.store.flushDrafts();
+        peer.session.reconnect();QTRY_COMPARE(peer.session.phase(),QString("ready"));QTRY_VERIFY(!peer.store.chats().isEmpty());open(peer);
+        QCOMPARE(peer.store.draftText(),QString("Keep across reconnect"));QCOMPARE(control(peer,"stats").value("send_count").toInt(),0);
+    }
+    void scheduledMessagesCanBeEditedRescheduledAndCancelled(){
+        Peer peer;ready(peer);open(peer);peer.store.loadScheduled();QTRY_VERIFY(!peer.store.scheduledBusy());QCOMPARE(peer.store.scheduledMessages().size(),1);
+        QVERIFY(!peer.store.changeScheduled("999","wrong",0,true));
+        QVERIFY(!peer.store.changeScheduled("7100",QString(),QDateTime::currentDateTime().toTime_t()-1,false));
+        QVERIFY(peer.store.changeScheduled("7100","Changed later",0,true));QTRY_VERIFY(!peer.store.scheduledBusy());QCOMPARE(peer.store.scheduledMessages().first().toMap().value("text").toString(),QString("Changed later"));
+        const uint date=QDateTime::currentDateTime().toTime_t()+7200;
+        QVERIFY(peer.store.changeScheduled("7100",QString(),date,false));QTRY_VERIFY(!peer.store.scheduledBusy());QCOMPARE(peer.store.scheduledMessages().first().toMap().value("sendDate").toUInt(),date);
+        QVERIFY(peer.store.cancelScheduled("7100"));QTRY_VERIFY(!peer.store.scheduledBusy());QVERIFY(peer.store.scheduledMessages().isEmpty());
+        QCOMPARE(control(peer,"stats").value("send_count").toInt(),0);
+        open(peer,B);QVERIFY(peer.store.scheduledMessages().isEmpty());QVERIFY(!peer.store.cancelScheduled("7100"));
+    }
+    void timedMutePreservesOtherNotificationSettings(){
+        Peer peer;ready(peer);open(peer);QVERIFY(!peer.store.muteFor(-1));QVERIFY(peer.store.muteFor(3600));
+        QTRY_COMPARE(peer.store.chatInfo().value("notificationsOn").toBool(),false);
+        QVERIFY(peer.store.muteFor(0));QTRY_COMPARE(peer.store.chatInfo().value("notificationsOn").toBool(),true);
+    }
+    void diagnosticsContainsCountersWithoutMessageText(){
+        Peer peer;ready(peer);open(peer);peer.store.setDraft("PRIVATE-DRAFT-NEVER-REPORT");
+        const QString report=peer.store.diagnostics()+peer.session.diagnostics();
+        QVERIFY(!report.contains("PRIVATE-DRAFT"));QVERIFY(!report.contains(A));QVERIFY(!report.contains(QString(32,'a')));QVERIFY(!report.isEmpty());
+    }
     void burstUpdatesAreBatchedAndAllMessagesArrive(){
         Peer peer;ready(peer);open(peer);
         QSignalSpy changed(&peer.store,SIGNAL(messagesChanged()));

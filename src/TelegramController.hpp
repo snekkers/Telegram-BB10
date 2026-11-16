@@ -8,6 +8,8 @@
 #include <QTimer>
 #include <QPointer>
 #include <QDateTime>
+#include <QNetworkConfigurationManager>
+#include <QProcess>
 
 class TelegramController : public QObject {
     Q_OBJECT
@@ -40,6 +42,11 @@ class TelegramController : public QObject {
     Q_PROPERTY(bool hasFailedAttachment READ hasFailedAttachment NOTIFY changed)
     Q_PROPERTY(int chatCount READ chatCount NOTIFY changed)
     Q_PROPERTY(int messageCount READ messageCount NOTIFY changed)
+    Q_PROPERTY(bb::cascades::DataModel* scheduledMessages READ scheduledMessages CONSTANT)
+    Q_PROPERTY(bb::cascades::DataModel* downloads READ downloads CONSTANT)
+    Q_PROPERTY(bool scheduledBusy READ scheduledBusy NOTIFY changed)
+    Q_PROPERTY(QString scheduledStatus READ scheduledStatus NOTIFY changed)
+    Q_PROPERTY(QString diagnostics READ diagnostics NOTIFY changed)
     Q_PROPERTY(int personalCount READ personalCount NOTIFY changed)
     Q_PROPERTY(int communityCount READ communityCount NOTIFY changed)
     Q_PROPERTY(int targetMessageIndex READ targetMessageIndex NOTIFY changed)
@@ -169,6 +176,22 @@ public:
     Q_INVOKABLE void setSearchQuery(const QString &text) { m_store->setSearchQuery(text); }
     Q_INVOKABLE QString nextUnreadChat() { return m_store->nextUnreadChat(); }
     Q_INVOKABLE bool markRead() { return m_store->markRead(); }
+    bb::cascades::DataModel *scheduledMessages() const{return m_scheduled;}
+    bb::cascades::DataModel *downloads() const{return m_downloads;}
+    bool scheduledBusy() const{return m_store->scheduledBusy();}
+    QString scheduledStatus() const{return m_store->scheduledStatus();}
+    QString diagnostics() const{return m_diagnostics;}
+    Q_INVOKABLE void refreshDiagnostics();
+    Q_INVOKABLE void loadScheduled(){m_store->loadScheduled();}
+    Q_INVOKABLE void closeScheduled(){m_store->closeScheduled();}
+    Q_INVOKABLE bool cancelScheduled(const QString &id){return m_store->cancelScheduled(id);}
+    Q_INVOKABLE bool saveScheduledText(const QString &id,const QString &text){return m_store->changeScheduled(id,text,0,true);}
+    Q_INVOKABLE bool reschedule(const QString &id,const QDateTime &date){return date.isValid() && m_store->changeScheduled(id,QString(),date.toTime_t(),false);}
+    Q_INVOKABLE bool muteFor(int seconds){return m_store->muteFor(seconds);}
+    Q_INVOKABLE bool muteUntil(const QDateTime &date){const qint64 seconds=qint64(date.toTime_t())-QDateTime::currentDateTime().toTime_t();return date.isValid() && seconds>0 && seconds<=366LL*86400 && m_store->muteFor(int(seconds));}
+    Q_INVOKABLE bool cancelDownload(int id){return m_store->cancelDownload(id);}
+    Q_INVOKABLE bool retryDownload(int id){return m_store->retryDownload(id);}
+    Q_INVOKABLE void configureAutoDownloads(bool wifi,bool mobile){m_autoWifi=wifi;m_autoMobile=mobile;m_store->setAutoDownloadPreferences(wifi,mobile);if(wifi || mobile)m_networkPoll.start(10000);else m_networkPoll.stop();networkChanged();}
     Q_INVOKABLE void setFollowingLatest(bool value) { m_store->setFollowingLatest(value); }
     Q_INVOKABLE bool downloadMedia(const QString &id) { return m_store->downloadMedia(id); }
     Q_INVOKABLE bool openMedia(const QString &id);
@@ -194,6 +217,10 @@ public:
 signals:
     void changed();
 private slots:
+    void updateScheduled();
+    void updateDownloads();
+    void networkChanged();
+    void memoryFinished();
     void updateChats();
     void updateContacts();
     void contactReady(const QString &id);
@@ -225,6 +252,12 @@ private:
     QString m_recipientQuery;
     QString m_attachmentChat, m_pickerChat, m_pickerKind, m_mediaError;
     bool m_recording;
+    bb::cascades::ArrayDataModel *m_scheduled,*m_downloads;
+    QNetworkConfigurationManager m_network;
+    QProcess m_memoryProbe;
+    QTimer m_networkPoll;
+    bool m_autoWifi,m_autoMobile;
+    QString m_diagnostics,m_networkLabel;
 
 };
 #endif

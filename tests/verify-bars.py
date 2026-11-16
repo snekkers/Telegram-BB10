@@ -26,7 +26,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.14.0.19" in manifest
+            assert "Package-Version: 0.15.0.20" in manifest
             assert "Entry-Point-Icon: native/assets/icon.png" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
@@ -38,7 +38,7 @@ def main():
                     assert "native/assets/"+reference in names, reference
             assert archive.read("native/assets/icon.png") == (ROOT / "assets/icon.png").read_bytes()
             for source in (ROOT / "assets").rglob("*"):
-                if source.is_file() and source.suffix in {".js", ".png", ".amd", ".txt"}:
+                if source.is_file() and source.suffix in {".js", ".png", ".amd", ".txt", ".ogg"}:
                     assert archive.read("native/assets/" + source.relative_to(ROOT / "assets").as_posix()) == source.read_bytes()
             assert archive.read("native/assets/emoji.rcc") == (ROOT / "assets/emoji.rcc").read_bytes()
             binary = archive.read("native/berrygram")
@@ -80,6 +80,8 @@ def main():
     assert store_incidents and all(item.get("type") == "pass" for item in store_incidents)
     avatar_incidents=ElementTree.parse(ROOT / "build/session-tests/avatars/results.qt.xml").getroot().findall(".//Incident")
     assert avatar_incidents and all(item.get("type")=="pass" for item in avatar_incidents)
+    voice_incidents=ElementTree.parse(ROOT / "build/session-tests/voice/results.qt.xml").getroot().findall(".//Incident")
+    assert voice_incidents and all(item.get("type")=="pass" for item in voice_incidents)
     report = {
         "checked_date": time.strftime("%Y-%m-%d"), "host": "Apple M1 / macOS arm64",
         "scope": "Build/package and Linux Qt checks; device execution is recorded separately in build/porting/device-tests.json",
@@ -92,6 +94,7 @@ def main():
                           "passed_rows_including_setup_cleanup": len(incidents), "failures": 0,
                           "real_tdlib": "1.8.69 offline: version, auth state, close; no parameters or account"},
         "avatar_tests": {"passed_rows_including_setup_cleanup": len(avatar_incidents), "failures": 0, "scope": "headless Qt image crop, cache, alpha and invalid/symlink input"},
+        "voice_tests": {"passed_rows_including_setup_cleanup": len(voice_incidents), "failures": 0, "scope": "Opus to private bounded WAV; malformed, cancellation and overlong input"},
         "chat_tests": {"platform": "Linux ARM64 / Qt 5.15.8 in Docker; synthetic process",
                        "results": "build/session-tests/store/results.xml",
                        "passed_rows_including_setup_cleanup": len(store_incidents), "failures": 0,

@@ -78,6 +78,23 @@ public:
     void setInfoSection(int section);
     void loadMoreInfo();
     bool setNotifications(bool enabled);
+    bool muteFor(int seconds);
+    QString diagnostics() const;
+    QVariantList scheduledMessages() const {return m_scheduledRows;}
+    QString scheduledStatus() const {return m_scheduledStatus;}
+    bool scheduledBusy() const {return m_scheduledBusy;}
+    void loadScheduled();
+    void closeScheduled();
+    bool changeScheduled(const QString &id,const QString &text,uint date,bool changeText);
+    bool cancelScheduled(const QString &id);
+    QVariantList downloads() const;
+    bool cancelDownload(int fileId);
+    bool retryDownload(int fileId);
+    void setAutoDownload(bool enabled){m_autoDownload=enabled;}
+    void setAutoDownloadPreferences(bool wifi,bool mobile){m_autoWifiAllowed=wifi;m_autoMobileAllowed=mobile;}
+    void autoDownload();
+    QString accountKey() const {return m_account;}
+    QString dataDirectory() const;
     bool ready() const { return m_ready; }
     bool loadingChats() const { return m_loadingChats; }
     bool loadingHistory() const { return m_loadingHistory; }
@@ -145,6 +162,8 @@ signals:
     void contactChatReady(const QString &chatId);
     void mediaProperties(const QString &messageId,const QVariantMap &properties);
     void avatarChanged(const QString &key);
+    void scheduledChanged();
+    void downloadsChanged();
 
 public slots:
     void consume(const QVariantMap &object);
@@ -182,6 +201,8 @@ private:
     void updateForwardStatus();
     bool actionResponse(const QVariantMap &object, const QVariantMap &pending);
     bool reactionResponse(const QVariantMap &object,const QVariantMap &pending);
+    bool toolsResponse(const QVariantMap &object,const QVariantMap &pending);
+    void updateDownload(const QVariantMap &file);
     void updateReactionNames();
     bool peopleResponse(const QVariantMap &object,const QVariantMap &pending);
     bool peopleUpdate(const QVariantMap &object);
@@ -203,6 +224,15 @@ private:
     QString m_account;
     QMap<QString, QString> m_localMessages;
     qlonglong m_nextCleanup;
+    QVariantList m_scheduledRows;
+    QString m_scheduledStatus;
+    bool m_scheduledBusy,m_scheduledOpen,m_autoDownload;
+    bool m_autoWifiAllowed,m_autoMobileAllowed;
+    unsigned m_scheduledSerial;
+    QMap<int,QVariantMap> m_downloads;
+    unsigned m_downloadSerial;
+    QSet<int> m_autoSuppressed;
+    quint64 m_completedRequests,m_timedOutRequests,m_requestLatency;
     QTimer m_expiry;
     QTimer m_draftTimer;
     QTimer m_peopleTimer;

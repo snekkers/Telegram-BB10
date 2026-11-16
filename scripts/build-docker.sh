@@ -20,6 +20,7 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 mkdir -p "$PROJECT_ROOT/build/$TARGET_PLATFORM"
+python3 "$PROJECT_ROOT/scripts/prepare-voice-codecs.py"
 if [ "$TARGET_PLATFORM" = device ]; then
     python3 "$PROJECT_ROOT/scripts/check-qnx-runtime.py"
 fi
