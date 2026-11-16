@@ -8,11 +8,17 @@ QT += core declarative
 
 INCLUDEPATH += $$PWD/src
 SOURCES += $$PWD/src/main.cpp \
-           $$PWD/src/ChatController.cpp
-HEADERS += $$PWD/src/ChatController.hpp
+           $$PWD/src/ChatController.cpp \
+           $$PWD/src/TelegramSession.cpp \
+           $$PWD/src/JsonCodec.cpp
+HEADERS += $$PWD/src/ChatController.hpp \
+           $$PWD/src/TelegramSession.hpp \
+           $$PWD/src/JsonCodec.hpp
+LIBS += -lbbdata
 OTHER_FILES += $$PWD/bar-descriptor.xml \
                $$PWD/assets/main.qml \
-               $$PWD/assets/ChatPage.qml
+               $$PWD/assets/ChatPage.qml \
+               $$PWD/assets/LoginPage.qml
 
 # The Cascades SDK chooses architecture-specific output directories for debug builds.
 # Build scripts stage the finished executable into bin/ for BAR packaging.

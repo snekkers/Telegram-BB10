@@ -7,6 +7,16 @@ NavigationPane {
         titleBar: TitleBar {
             title: "Berrygram"
         }
+        actions: [
+            ActionItem {
+                title: qsTr("Вход в Telegram")
+                ActionBar.placement: ActionBarPlacement.OnBar
+                onTriggered: {
+                    var loginPage = loginPageDefinition.createObject();
+                    if (loginPage) navigation.push(loginPage);
+                }
+            }
+        ]
 
         Container {
             horizontalAlignment: HorizontalAlignment.Fill
@@ -60,11 +70,15 @@ NavigationPane {
         ComponentDefinition {
             id: chatPageDefinition
             source: "ChatPage.qml"
+        },
+        ComponentDefinition {
+            id: loginPageDefinition
+            source: "LoginPage.qml"
         }
     ]
 
     onPopTransitionEnded: {
+        if (page.objectName !== "loginPage") _chat.closeChat();
         page.destroy();
-        _chat.closeChat();
     }
 }

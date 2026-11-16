@@ -53,6 +53,9 @@ cp /source/bar-descriptor.xml "$PACKAGE_STAGE/bar-descriptor.xml"
 cp -R /source/assets "$PACKAGE_STAGE/assets"
 mkdir -p "$PACKAGE_STAGE/build/$TARGET_PLATFORM/bin"
 cp "$BUILD_DIRECTORY/bin/berrygram" "$PACKAGE_STAGE/build/$TARGET_PLATFORM/bin/berrygram"
+if [ "$TARGET_PLATFORM" = device ]; then
+    cp -R /output/device/telegram-runtime "$PACKAGE_STAGE/build/device/telegram-runtime"
+fi
 cd "$PACKAGE_STAGE"
 blackberry-nativepackager -package "$BUILD_DIRECTORY/berrygram-$TARGET_PLATFORM.bar" \
     -devMode -configuration "$BUILD_CONFIG" bar-descriptor.xml

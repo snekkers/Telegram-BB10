@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""Inspect packaged artifacts; does not claim BB10 execution or account login."""
+import hashlib
+import json
+import struct
+import sys
+import time
+import zipfile
+from pathlib import Path
+from xml.etree import ElementTree
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "porting"))
+from elf32 import inspect
+
+
+def main():
+    artifacts = []
+    for target, arch, machine in [("simulator", "x86", 3), ("device", "armle-v7", 40)]:
+        path = ROOT / "build" / target / ("berrygram-" + target + ".bar")
+        with zipfile.ZipFile(path) as archive:
+            assert archive.testzip() is None
+            names = archive.namelist()
+            assert len(names) == len(set(names))
+            manifest = archive.read("META-INF/MANIFEST.MF").decode()
+            assert "Package-Architecture: " + arch + "\n" in manifest
+            assert "Application-Development-Mode: true" in manifest
+            assert "Package-Version: 0.2.0.2" in manifest
+            assert "Entry-Point-User-Actions: access_internet" in manifest
+            assert manifest.count("\nEntry-Point: ") == 1
+            entry = next(line for line in manifest.splitlines() if line.startswith("Entry-Point: "))
+            assert "telegram/lib" not in entry
+            for source in (ROOT / "assets").glob("*.qml"):
+                assert archive.read("native/assets/" + source.name) == source.read_bytes()
+            binary = archive.read("native/berrygram")
+            assert binary[:6] == b"\x7fELF\x01\x01"
+            assert struct.unpack_from("<H", binary, 18)[0] == machine
+            if target == "device":
+                ui = inspect(binary)
+                assert "libcpp.so.4" in ui["needed"]
+                assert "libbbdata.so.1" in ui["needed"]
+                assert not {"libstdc++.so.6", "libgcc_s.so.1", "libtdjson.so"} & set(ui["needed"])
+                runtime = json.loads(archive.read("native/telegram/runtime-manifest.json"))
+                required = {"bin/berrygram-tdjson", "lib/libtdjson.so", "lib/libstdc++.so.6", "lib/libgcc_s.so.1"}
+                for item in runtime["files"]:
+                    if item["path"] in required:
+                        content = archive.read("native/telegram/" + item["path"])
+                        assert hashlib.sha256(content).hexdigest() == item["sha256"]
+                        inspect(content)
+                assert {"native/telegram/" + name for name in required} <= set(names)
+                worker_block = manifest.split("Archive-Asset-Name: native/telegram/bin/berrygram-tdjson\n", 1)[1].split("\n\n", 1)[0]
+                assert "Archive-Asset-Type: Qnx/Elf" in worker_block
+                for license_file in (ROOT / "build/device/telegram-runtime/licenses").iterdir():
+                    assert archive.read("native/telegram/licenses/" + license_file.name) == license_file.read_bytes()
+            else:
+                assert not any(name.startswith("native/telegram/") for name in names)
+        artifacts.append({"target": target, "path": str(path.relative_to(ROOT)), "architecture": arch,
+                          "elf_machine": machine, "size_bytes": path.stat().st_size,
+                          "sha256": hashlib.sha256(path.read_bytes()).hexdigest()})
+    tests = ElementTree.parse(ROOT / "build/session-tests/results.xml").getroot()
+    assert tests.tag == "testsuite"
+    assert tests.get("failures") == "0" and tests.get("errors") == "0"
+    qt_tests = ElementTree.parse(ROOT / "build/session-tests/results.qt.xml").getroot()
+    incidents = qt_tests.findall(".//Incident")
+    assert incidents and all(item.get("type") == "pass" for item in incidents)
+    report = {
+        "checked_date": time.strftime("%Y-%m-%d"), "host": "Apple M1 / macOS arm64",
+        "sdk": "BlackBerry Native SDK 10.3.1.995 / Linux amd64 in Docker",
+        "checks": ["Qt 4/C++98 compilation and BAR packaging", "ZIP integrity and ELF architecture",
+                   "packaged QML matches source", "ARM engine and library hashes match runtime manifest",
+                   "single UI entry point and isolated child GNU runtime", "runtime license texts included"],
+        "session_tests": {"platform": "Linux ARM64 / Qt 5.15.8 in Docker", "results": "build/session-tests/results.xml",
+                          "functions_including_setup_cleanup": int(tests.get("tests")),
+                          "passed_rows_including_setup_cleanup": len(incidents), "failures": 0,
+                          "real_tdlib": "1.8.69 offline: version, auth state, close; no parameters or account"},
+        "not_checked": ["Qt 4 JsonDataAccess execution", "BB10 runtime and QML rendering",
+                        "Telegram network login", "physical Classic installation"],
+        "artifacts": artifacts,
+    }
+    (ROOT / "build/verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    print(json.dumps(report, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

@@ -20,6 +20,9 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 mkdir -p "$PROJECT_ROOT/build/$TARGET_PLATFORM"
+if [ "$TARGET_PLATFORM" = device ]; then
+    python3 "$PROJECT_ROOT/scripts/check-qnx-runtime.py"
+fi
 
 # Only the build directory is writable. Compilation and packaging need no network.
 # The initial image pull, if needed, is handled by Docker before the container runs.

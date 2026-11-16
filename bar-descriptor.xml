@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <qnx xmlns="http://www.qnx.com/schemas/application/1.0">
     <id>org.example.berrygram</id>
-    <name>Berrygram Demo</name>
-    <versionNumber>0.1.0</versionNumber>
-    <buildId>1</buildId>
-    <description>Offline Cascades prototype for BlackBerry Classic.</description>
+    <name>Berrygram</name>
+    <versionNumber>0.2.0</versionNumber>
+    <buildId>2</buildId>
+    <description>Experimental native Telegram client for BlackBerry Classic.</description>
     <author>Berrygram Developer</author>
 
     <initialWindow>
@@ -20,9 +20,14 @@
     <configuration name="Device-Debug">
         <platformArchitecture>armle-v7</platformArchitecture>
         <asset path="build/device/bin/berrygram" entry="true" type="Qnx/Elf">berrygram</asset>
+        <asset path="build/device/telegram-runtime/bin/berrygram-tdjson" type="Qnx/Elf">telegram/bin/berrygram-tdjson</asset>
+        <asset path="build/device/telegram-runtime/lib">telegram/lib</asset>
+        <asset path="build/device/telegram-runtime/licenses">telegram/licenses</asset>
+        <asset path="build/device/telegram-runtime/runtime-manifest.json">telegram/runtime-manifest.json</asset>
     </configuration>
 
     <asset path="assets">assets</asset>
     <permission system="true">run_native</permission>
+    <permission>access_internet</permission>
     <env var="LD_LIBRARY_PATH" value="app/native/lib:/usr/lib/qt4/lib"/>
 </qnx>
