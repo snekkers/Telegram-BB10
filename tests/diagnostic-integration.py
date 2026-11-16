@@ -111,13 +111,17 @@ def fixture_test():
             assert upload(b"x", claimed_size=50*1024*1024+1)[0] == 413
             code, uploaded = upload(b"synthetic document", "..%2Fnote.txt")
             assert code == 200 and uploaded["name"] == "_note.txt"
+            assert request("/api/uploads/" + uploaded["uploadId"])[0] == 200
+            assert request("/api/uploads/" + uploaded["uploadId"], authorization=False)[0] == 401
             attachment = {"action": "sendAttachment", "chatId": A, "uploadId": uploaded["uploadId"], "kind": "document", "caption": "deny"}
             assert request(value={**attachment, "uploadId": "missing"})[0] == 409
             assert request(value={**attachment, "chatId": "9007199254740991"})[0] == 409
             assert request(value=attachment)[0] == 200
             until(bridge, lambda s: s.get("failedAttachment", {}).get("caption") == "deny")
             state_json = json.loads(request("/api/state")[1])
-            assert state_json["failedAttachment"]["uploadId"] == uploaded["uploadId"]
+            assert state_json["failedAttachment"]["recordId"] == uploaded["uploadId"]
+            recovered = json.loads(request(value={"action":"recoverAttachment", "chatId":A})[1])
+            attachment["uploadId"] = recovered["attachmentDraft"]["recordId"]
             assert request(value={**attachment, "caption": "Документ"})[0] == 200
             until(bridge, lambda s: any(m.get("media", {}).get("kind") == "document" for m in s.get("messages", [])))
             assert request(value={"action": "discardUpload", "chatId": A, "uploadId": uploaded["uploadId"]})[0] == 409
@@ -149,6 +153,82 @@ def fixture_test():
                            "upload authentication, size, chat binding, cancel and manual recovery"]}
 
 
+def durable_restart_test():
+    from urllib.parse import quote
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        library = root / "libtdjson.so"; library.write_text("fixture")
+        data = root / "private"
+        def connect():
+            bridge = server_module.Bridge(CORE, ROOT / "tests/fake-chat-engine.py", library, data, synthetic=True)
+            assert bridge.command({"action":"start"})
+            until(bridge, lambda s: s.get("phase") == "parameters")
+            assert bridge.command({"action":"configure", "apiId":"12345", "apiHash":"a"*32})
+            until(bridge, lambda s: len(s.get("chats", [])) == 3)
+            assert bridge.command({"action":"openChat", "chatId":A})
+            until(bridge, lambda s: s.get("chatId") == A and len(s.get("messages", [])) == 3)
+            return bridge
+        bridge = connect()
+        token = "restart-test-token"
+        server = server_module.create_server(bridge, token)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        origin = f"http://127.0.0.1:{server.server_port}"
+        def call(path, body=None, **headers):
+            request_headers={"Authorization":"Bearer "+token, "Origin":origin, **headers}
+            if body is not None and "Content-Type" not in request_headers: request_headers["Content-Type"]="application/json"
+            request = urllib.request.Request(origin+path, data=body, headers=request_headers)
+            try:
+                with urllib.request.urlopen(request, timeout=15) as response: return response.status,response.read()
+            except urllib.error.HTTPError as error: return error.code,error.read()
+        def stop_server():
+            server.shutdown(); server.server_close(); bridge.close()
+        try:
+            code, body = call("/api/upload", b"persistent synthetic document", **{"Content-Type":"application/octet-stream", "X-File-Name":"draft.txt", "X-Chat-Id":A,
+                "X-Media-Info":quote(json.dumps({"kind":"document", "caption":"Сохраняем подпись 😀"}))})
+            assert code == 200
+            record = json.loads(body)["attachmentDraft"]; record_id=record["recordId"]
+            assert bridge.command({"action":"draft", "chatId":A, "text":"Подпись перед перезапуском 😀"})
+            until(bridge, lambda s: s.get("attachmentDraft", {}).get("caption") == "Подпись перед перезапуском 😀")
+        finally:
+            stop_server()
+        bridge = connect()
+        server = server_module.create_server(bridge, token)
+        threading.Thread(target=server.serve_forever, daemon=True).start(); origin=f"http://127.0.0.1:{server.server_port}"
+        try:
+            state=until(bridge, lambda s: s.get("attachmentDraft", {}).get("recordId") == record_id)
+            assert state["draft"] == "Подпись перед перезапуском 😀"
+            assert call("/api/uploads/"+record_id)[0] == 200
+            assert not any(m.get("outgoing") for m in state["messages"])
+            body=json.dumps({"action":"sendAttachment", "chatId":A, "uploadId":record_id, "kind":"document", "caption":"timeout-media"}).encode()
+            assert call("/api/command", body)[0] == 200
+            journal=json.loads((data/"outbox.json").read_text())
+            assert journal["entries"][record_id]["state"] == "submitting"
+            # SIGKILL tests the actual durable-before-send boundary, not graceful shutdown.
+            bridge.process.kill(); bridge.process.wait(timeout=5)
+        finally:
+            stop_server()
+        bridge = connect()
+        server = server_module.create_server(bridge, token)
+        threading.Thread(target=server.serve_forever, daemon=True).start(); origin=f"http://127.0.0.1:{server.server_port}"
+        try:
+            state=until(bridge, lambda s: s.get("failedAttachment", {}).get("state") == "uncertain")
+            assert state["failedAttachment"]["recordId"] == record_id
+            assert "Проверьте историю" in state["recoveryWarning"]
+            assert not any(m.get("outgoing") for m in state["messages"])
+            assert Path(state["failedAttachment"]["path"]).is_file()
+            assert call("/api/command", json.dumps({"action":"sendAttachment", "chatId":A, "uploadId":record_id, "kind":"document", "caption":"must prepare first"}).encode())[0] == 409
+            code, body=call("/api/command", json.dumps({"action":"recoverAttachment", "chatId":A}).encode())
+            assert code == 200 and json.loads(body)["attachmentDraft"]["recordId"] != record_id
+            state=until(bridge, lambda s: s.get("attachmentDraft", {}).get("recordId"))
+            assert not any(m.get("outgoing") for m in state["messages"])
+            assert json.loads((data/"outbox.json").read_text())["entries"][record_id]["state"] == "uncertain"
+        finally:
+            stop_server()
+    return {"name":"durable_selection_and_forced_process_exit", "passed":True, "checks":["selection, private payload and caption survive full core restart",
+        "opaque upload IDs survive HTTP restart", "SIGKILL after submit retains uncertain intent", "uncertain message never automatically resubmitted",
+        "manual preparation preserves original uncertain attempt"]}
+
+
 def real_test():
     library = ROOT / "build/macos-development/tdlib/libtdjson.1.8.69.dylib"
     if not library.is_file():
@@ -172,7 +252,7 @@ def real_test():
 def main():
     destination = ROOT / "build/macos-development/diagnostic-tests.json"
     destination.unlink(missing_ok=True)
-    results = [fixture_test(), real_test()]
+    results = [fixture_test(), durable_restart_test(), real_test()]
     destination.write_text(json.dumps({"platform": "macOS ARM64", "tests": results}, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(results, ensure_ascii=False, indent=2))
 

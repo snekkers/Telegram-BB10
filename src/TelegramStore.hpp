@@ -7,6 +7,7 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QVariantList>
+#include "LocalOutbox.hpp"
 
 class TelegramSession;
 
@@ -15,6 +16,7 @@ class TelegramStore : public QObject {
     Q_OBJECT
 public:
     explicit TelegramStore(TelegramSession *session, QObject *parent = 0, int requestTimeoutMs = 60000);
+    ~TelegramStore();
     QVariantList chats() const { return m_chatRows; }
     QVariantList messages() const { return m_messageRows; }
     bool ready() const { return m_ready; }
@@ -25,7 +27,15 @@ public:
     bool canSend() const;
     bool canSendMedia(const QString &kind) const;
     QString uploadDirectory() const;
-    QVariantMap failedAttachment() const { return m_failedAttachments.value(m_current); }
+    QVariantMap failedAttachment() const;
+    QVariantMap attachmentDraft() const;
+    bool stageAttachment(const QString &path, const QString &kind, const QString &caption, int duration = 0);
+    bool clearAttachmentDraft();
+    bool recoverAttachment();
+    QVariantMap uploadRecord(const QString &id) const;
+    QString recoveryWarning() const;
+    QString cacheSummary() const { return m_local.summary(); }
+    int cleanupUploads();
     bool sendAttachment(const QString &path, const QString &kind, const QString &caption,
                         int duration = 0, int width = 0, int height = 0);
     bool sendBusy() const;
@@ -33,7 +43,7 @@ public:
     QString errorText() const { return m_error; }
     QString connectionStatus() const { return m_connection; }
     QString composerHint() const;
-    QString failedDraft() const { return m_failedDrafts.value(m_current); }
+    QString failedDraft() const;
     QString draftText() const { return m_drafts.value(m_current); }
     QString currentChatId() const { return m_current; }
     QString searchQuery() const { return m_search; }
@@ -83,7 +93,14 @@ private:
     void response(const QVariantMap &object, const QVariantMap &request);
     bool sendContent(const QVariantMap &content, const QString &text, const QVariantMap &attachment = QVariantMap());
 
+    void suspendLocalSends();
+    void restoreChatDraft(const QString &id, const QVariant &remote);
+    void recordSendResult(const QVariantMap &message, const QString &recordId, const QString &outcome = QString());
     TelegramSession *m_session;
+    LocalOutbox m_local;
+    QString m_account;
+    QMap<QString, QString> m_localMessages;
+    qlonglong m_nextCleanup;
     QTimer m_expiry;
     QTimer m_draftTimer;
     QElapsedTimer m_clock;
@@ -95,6 +112,7 @@ private:
     QMap<qlonglong, QVariantMap> m_messages, m_overlays;
     QMap<int, QVariantMap> m_files;
     QSet<int> m_downloading;
+    QSet<QString> m_recoveredTexts;
     QSet<qlonglong> m_historyTouched, m_removed;
     QVariantList m_chatRows, m_messageRows;
     QString m_current, m_error, m_connection, m_seenPhase, m_search;

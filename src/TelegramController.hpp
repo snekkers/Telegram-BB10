@@ -26,6 +26,8 @@ class TelegramController : public QObject {
     Q_PROPERTY(bool sendBusy READ sendBusy NOTIFY changed)
     Q_PROPERTY(int scrollSerial READ scrollSerial NOTIFY changed)
     Q_PROPERTY(QString attachmentName READ attachmentName NOTIFY changed)
+    Q_PROPERTY(QString recoveryWarning READ recoveryWarning NOTIFY changed)
+    Q_PROPERTY(QString cacheSummary READ cacheSummary NOTIFY changed)
     Q_PROPERTY(QString mediaError READ mediaError NOTIFY changed)
     Q_PROPERTY(bool recording READ recording NOTIFY changed)
     Q_PROPERTY(bool canAttach READ canAttach NOTIFY changed)
@@ -51,8 +53,8 @@ public:
     bool sendBusy() const { return m_store->sendBusy(); }
     int scrollSerial() const { return m_scrollSerial; }
     int chatCount() const { return m_chats->size(); }
-    Q_INVOKABLE bool openChat(const QString &id) { cancelAttachment(); return m_store->openChat(id); }
-    Q_INVOKABLE void closeChat() { cancelAttachment(); m_store->closeChat(); }
+    Q_INVOKABLE bool openChat(const QString &id) { leaveAttachment(); return m_store->openChat(id); }
+    Q_INVOKABLE void closeChat() { leaveAttachment(); m_store->closeChat(); }
     Q_INVOKABLE bool sendText(const QString &text) { return m_store->sendText(text); }
     Q_INVOKABLE void loadMoreChats() { m_store->loadMoreChats(); }
     Q_INVOKABLE void loadMoreHistory() { m_store->loadMoreHistory(); }
@@ -64,7 +66,10 @@ public:
     Q_INVOKABLE bool markRead() { return m_store->markRead(); }
     Q_INVOKABLE bool downloadMedia(const QString &id) { return m_store->downloadMedia(id); }
     Q_INVOKABLE bool openMedia(const QString &id);
-    QString attachmentName() const { return m_attachment.value("path").toString().section('/', -1); }
+    QString attachmentName() const { return m_attachment.value("path").toString().isEmpty() ? m_attachment.value("name").toString() : m_attachment.value("path").toString().section('/', -1); }
+    QString recoveryWarning() const { return m_store->recoveryWarning(); }
+    QString cacheSummary() const { return m_store->cacheSummary(); }
+    Q_INVOKABLE void cleanupUploads() { m_store->cleanupUploads(); }
     QString mediaError() const { return m_mediaError; }
     bool recording() const { return m_recording; }
     bool canAttach() const { return m_store->canSendMedia("document") || m_store->canSendMedia("photo") || m_store->canSendMedia("voice"); }
@@ -86,6 +91,7 @@ private slots:
     void finishRecording();
     void recordingError();
     void checkAttachmentChat();
+    void leaveAttachment();
 private:
     void reconcile(bb::cascades::ArrayDataModel *model, const QVariantList &rows, const QString &key);
     QString newUploadPath(const QString &name);

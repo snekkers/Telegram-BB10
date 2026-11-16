@@ -3,7 +3,7 @@
 #include <QString>
 #include <QVariantMap>
 namespace PrivateFile {
-bool read(const QString &path, QVariantMap *value);
-bool write(const QString &path, const QVariantMap &value);
+bool read(const QString &path, QVariantMap *value, int maximumBytes = 65536);
+bool write(const QString &path, const QVariantMap &value, int maximumBytes = 65536);
 }
 #endif

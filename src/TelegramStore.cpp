@@ -82,7 +82,7 @@ QString draftValue(const QVariant &draft)
 }
 
 TelegramStore::TelegramStore(TelegramSession *session, QObject *parent, int requestTimeoutMs)
-    : QObject(parent), m_session(session), m_requestTimeoutMs(qMax(100, requestTimeoutMs)), m_historyCursor(0), m_generation(0),
+    : QObject(parent), m_session(session), m_local(session->dataDirectory()), m_nextCleanup(0), m_requestTimeoutMs(qMax(100, requestTimeoutMs)), m_historyCursor(0), m_generation(0),
       m_ready(false), m_loadingChats(false), m_loadingHistory(false),
       m_chatsEnd(false), m_historyEnd(false), m_online(true)
 {
@@ -96,12 +96,25 @@ TelegramStore::TelegramStore(TelegramSession *session, QObject *parent, int requ
     sessionChanged();
 }
 
+TelegramStore::~TelegramStore() { flushDrafts(); suspendLocalSends(); }
+
+void TelegramStore::suspendLocalSends()
+{
+    foreach (const QString &chat, m_dirtyDrafts.keys()) m_local.rememberDraft(m_account, chat, m_dirtyDrafts.value(chat));
+    foreach (const QVariant &value, m_local.entries(m_account)) {
+        const QVariantMap item = value.toMap();
+        if (item.value("state") == "submitting" || item.value("state") == "pending")
+            m_local.transition(item.value("recordId").toString(), "uncertain");
+    }
+}
+
 void TelegramStore::reset()
 {
+    suspendLocalSends(); m_account.clear(); m_localMessages.clear();
     ++m_generation;
     m_chats.clear(); m_users.clear(); m_requests.clear(); m_outbox.clear();
     m_messages.clear(); m_overlays.clear(); m_historyTouched.clear(); m_removed.clear();
-    m_failedDrafts.clear(); m_current.clear(); m_error.clear();
+    m_failedDrafts.clear(); m_recoveredTexts.clear(); m_current.clear(); m_error.clear();
     m_draftTimer.stop(); m_drafts.clear(); m_dirtyDrafts.clear(); m_draftInFlight.clear();
     m_files.clear(); m_downloading.clear();
     m_chatRows.clear(); m_messageRows.clear();
@@ -134,7 +147,7 @@ void TelegramStore::sessionChanged()
         value.insert("value", true);
         option.insert("value", value);
         submit(option, "option");
-        loadMoreChats();
+        submit(method("getMe"), "me");
     }
     emit changed();
 }
@@ -259,7 +272,7 @@ QString TelegramStore::composerHint() const
 bool TelegramStore::canSend() const
 {
     const QVariantMap chat = m_chats.value(m_current);
-    return m_ready && !m_current.isEmpty() && !sendBusy() && chat.value("canSend").toBool() &&
+    return m_ready && !m_account.isEmpty() && m_local.healthy() && !m_current.isEmpty() && !sendBusy() && chat.value("canSend").toBool() &&
         !chat.value("topics").toBool() && chat.value("type").toString() != "chatTypeSecret";
 }
 
@@ -267,7 +280,7 @@ bool TelegramStore::canSendMedia(const QString &kind) const
 {
     const QVariantMap chat = m_chats.value(m_current);
     const QString permission = kind == "photo" ? "can_send_photos" : kind == "voice" ? "can_send_voice_notes" : "can_send_documents";
-    return (kind == "document" || kind == "photo" || kind == "voice") && m_ready && !m_current.isEmpty() &&
+    return (kind == "document" || kind == "photo" || kind == "voice") && m_ready && !m_account.isEmpty() && m_local.healthy() && !m_current.isEmpty() &&
         !sendBusy() && !chat.value("topics").toBool() && chat.value("type").toString() != "chatTypeSecret" &&
         chat.value("permissions").toMap().value(permission).toBool();
 }
@@ -275,6 +288,95 @@ bool TelegramStore::canSendMedia(const QString &kind) const
 QString TelegramStore::uploadDirectory() const
 {
     return QDir(m_session->dataDirectory()).filePath("uploads");
+}
+
+QVariantMap TelegramStore::attachmentDraft() const
+{
+    return m_local.latest(m_account, m_current, "attachment", QStringList() << "draft");
+}
+
+QVariantMap TelegramStore::failedAttachment() const
+{
+    const QVariantMap result = m_local.latest(m_account, m_current, "attachment", QStringList() << "failed" << "uncertain");
+    return result.isEmpty() ? m_failedAttachments.value(m_current) : result;
+}
+
+QString TelegramStore::failedDraft() const
+{
+    const QVariantMap item = m_local.latest(m_account, m_current, "text", QStringList() << "failed" << "uncertain");
+    return item.isEmpty() || m_recoveredTexts.contains(item.value("recordId").toString()) ? m_failedDrafts.value(m_current) : item.value("text").toString();
+}
+
+QVariantMap TelegramStore::uploadRecord(const QString &id) const
+{
+    QVariantMap item = m_local.entry(id);
+    if (m_account.isEmpty() || item.value("accountId") != m_account || item.value("chatId") != m_current || item.value("type") != "attachment") return QVariantMap();
+    item.insert("recordId", id); item.insert("path", m_local.path(item)); return item;
+}
+
+bool TelegramStore::stageAttachment(const QString &path, const QString &kind, const QString &caption, int duration)
+{
+    QFileInfo file(path);
+    if (!m_ready || m_account.isEmpty() || m_current.isEmpty() || caption.size() > 1024 || duration < 0 || duration > 300 ||
+        (kind != "photo" && kind != "document" && kind != "voice") || !file.isFile() || file.isSymLink() ||
+        file.size() <= 0 || file.size() > 50 * 1024 * 1024) return false;
+    QVariantMap item; item.insert("type", "attachment"); item.insert("path", path); item.insert("kind", kind);
+    item.insert("caption", caption); item.insert("duration", duration);
+    const QString id = m_local.prepare(m_account, m_current, item);
+    if (id.isEmpty()) { m_error = m_local.error(); emit changed(); return false; }
+    setDraft(caption); emit changed(); return true;
+}
+
+bool TelegramStore::clearAttachmentDraft()
+{
+    const bool result = m_local.removeDraft(m_account, m_current);
+    if (!result) m_error = m_local.error();
+    emit changed(); return result;
+}
+
+bool TelegramStore::recoverAttachment()
+{
+    const QVariantMap item = failedAttachment();
+    return !item.isEmpty() && stageAttachment(item.value("path").toString(), item.value("kind").toString(),
+        item.value("caption").toString(), item.value("duration").toInt());
+}
+
+QString TelegramStore::recoveryWarning() const
+{
+    if (m_account.isEmpty()) return QString();
+    if (!m_local.healthy() || !m_local.error().isEmpty()) return m_local.error();
+    foreach (const QVariant &value, m_local.entries(m_account)) {
+        const QVariantMap item = value.toMap();
+        if (item.value("chatId") == m_current && item.value("state") == "uncertain")
+            return ru("Результат предыдущей отправки неизвестен. Проверьте историю перед ручным повтором; автоматического повтора нет.");
+    }
+    const QVariantMap item = attachmentDraft();
+    if (!item.isEmpty() && item.value("path").toString().isEmpty()) return ru("Копия сохранённого вложения отсутствует. Выберите исходный файл заново.");
+    return QString();
+}
+
+int TelegramStore::cleanupUploads() { const int count = m_local.cleanup(); emit changed(); return count; }
+
+void TelegramStore::restoreChatDraft(const QString &id, const QVariant &remote)
+{
+    if (m_dirtyDrafts.contains(id)) return;
+    const QVariant local = m_local.draft(m_account, id);
+    const QVariantMap attachment = m_local.latest(m_account, id, "attachment", QStringList() << "draft");
+    const QVariantMap text = m_local.latest(m_account, id, "text", QStringList() << "draft");
+    if (local.isValid()) { m_drafts.insert(id, local.toString()); m_dirtyDrafts.insert(id, local.toString()); m_draftTimer.start(600); }
+    else if (!attachment.isEmpty()) m_drafts.insert(id, attachment.value("caption").toString());
+    else if (!text.isEmpty()) m_drafts.insert(id, text.value("text").toString());
+    else m_drafts.insert(id, draftValue(remote));
+}
+
+void TelegramStore::recordSendResult(const QVariantMap &message, const QString &recordId, const QString &outcome)
+{
+    if (recordId.isEmpty()) return;
+    const QString sending = message.value("sending_state").toMap().value("@type").toString();
+    const QString state = outcome == "failed" || sending == "messageSendingStateFailed" ? "failed" :
+        outcome == "succeeded" || sending.isEmpty() ? "sent" : "pending";
+    if (!m_local.transition(recordId, state, idString(message.value("id")))) m_error = m_local.error();
+    if (state == "pending") m_localMessages.insert(idString(message.value("chat_id")) + ":" + idString(message.value("id")), recordId);
 }
 
 bool TelegramStore::sendAttachment(const QString &path, const QString &kind, const QString &caption, int duration, int width, int height)
@@ -593,9 +695,17 @@ bool TelegramStore::sendContent(const QVariantMap &content, const QString &text,
     QVariantMap call = method("sendMessage"); call.insert("chat_id", number(m_current));
     QVariantMap options = method("messageSendOptions"); options.insert("paid_message_star_count", 0); call.insert("options", options);
     call.insert("input_message_content", content);
+    QVariantMap intent = attachment;
+    intent.insert("type", attachment.isEmpty() ? "text" : "attachment");
+    if (attachment.isEmpty()) intent.insert("text", text);
+    const QString recordId = m_local.prepare(m_account, m_current, intent);
+    if (recordId.isEmpty() || !m_local.transition(recordId, "submitting")) {
+        m_error = m_local.error(); emit changed(); return false;
+    }
     const QString id = submit(call, "send", m_current);
-    if (id.isEmpty()) return false;
-    QVariantMap row;
+    if (id.isEmpty()) { m_local.transition(recordId, "uncertain"); emit changed(); return false; }
+    m_requests[id].insert("recordId", recordId);
+    QVariantMap row; row.insert("recordId", recordId);
     row.insert("messageKey", "request:" + id);
     row.insert("sequence", id.section('.', -1).toUInt());
     row.insert("chatId", m_current);
@@ -618,9 +728,10 @@ bool TelegramStore::sendContent(const QVariantMap &content, const QString &text,
 
 QString TelegramStore::takeFailedDraft()
 {
-    QString text = m_failedDrafts.take(m_current);
-    emit changed();
-    return text;
+    const QString text = failedDraft();
+    const QVariantMap item = m_local.latest(m_account, m_current, "text", QStringList() << "failed" << "uncertain");
+    if (!item.isEmpty()) m_recoveredTexts.insert(item.value("recordId").toString());
+    m_failedDrafts.remove(m_current); setDraft(text); flushDrafts(); emit changed(); return text;
 }
 
 void TelegramStore::setSearchQuery(const QString &text)
@@ -667,6 +778,8 @@ void TelegramStore::setDraft(const QString &text)
 
 void TelegramStore::flushDrafts()
 {
+    foreach (const QString &chat, m_dirtyDrafts.keys())
+        if (!m_local.rememberDraft(m_account, chat, m_dirtyDrafts.value(chat))) m_error = m_local.error();
     if (!m_ready) return;
     const QStringList ids = m_dirtyDrafts.keys();
     foreach (const QString &chat, ids) {
@@ -697,7 +810,32 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
     const QString chat = pending.value("chatId").toString();
     const bool current = chat == m_current && pending.value("generation").toUInt() == m_generation;
     const bool error = type == "error";
-    if (kind == "chats") {
+    if (kind == "me") {
+        if (!error && type == "user" && object.value("id").toLongLong() > 0) {
+            m_account = idString(object.value("id"));
+            if (!m_local.open()) m_error = m_local.error();
+            cleanupUploads();
+            foreach (const QString &existingChat, m_chats.keys()) {
+                if (m_local.draft(m_account, existingChat).isValid() ||
+                    !m_local.latest(m_account, existingChat, "attachment", QStringList() << "draft").isEmpty())
+                    restoreChatDraft(existingChat, QVariant());
+            }
+            foreach (const QVariant &value, m_local.entries(m_account)) {
+                const QVariantMap item = value.toMap();
+                if (item.value("state") == "uncertain" && !item.value("messageId").toString().isEmpty()) {
+                    if (m_requests.size() >= 48) break; // Reserve capacity for the chat list and interactive requests.
+                    QVariantMap call = method("getMessage"); call.insert("chat_id", number(item.value("chatId").toString()));
+                    call.insert("message_id", number(item.value("messageId").toString()));
+                    const QString request = submit(call, "reconcile", item.value("chatId").toString());
+                    if (!request.isEmpty()) m_requests[request].insert("recordId", item.value("recordId"));
+                }
+            }
+            loadMoreChats();
+        } else m_error = ru("Не удалось определить аккаунт для сохранённых черновиков.");
+    } else if (kind == "reconcile") {
+        if (type == "message" && idString(object.value("chat_id")) == chat)
+            recordSendResult(object, pending.value("recordId").toString());
+    } else if (kind == "chats") {
         m_loadingChats = false;
         if (error && object.value("code").toInt() == 404) m_chatsEnd = true;
         else if (error) m_error = ru("Не удалось загрузить чаты (код %1).").arg(object.value("code").toInt());
@@ -727,7 +865,9 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
         } else if (type == "file") updateFile(object);
     } else if (kind == "draft") {
         m_draftInFlight.remove(chat);
-        if (!error && m_dirtyDrafts.value(chat) == pending.value("text").toString()) m_dirtyDrafts.remove(chat);
+        if (!error && m_dirtyDrafts.value(chat) == pending.value("text").toString()) {
+            m_local.acknowledgeDraft(m_account, chat, pending.value("text").toString()); m_dirtyDrafts.remove(chat);
+        }
         else if (error) {
             if (chat == m_current) m_error = ru("Черновик пока не сохранён. Он остаётся в памяти приложения.");
         } else m_draftTimer.start(150);
@@ -735,6 +875,7 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
         const QString extra = object.value("@extra").toString();
         const QString text = m_outbox.value(extra).value("text").toString();
         if (error) {
+            m_local.transition(pending.value("recordId").toString(), "failed");
             if (m_outbox.contains(extra)) m_outbox[extra].insert("delivery", ru("Не отправлено"));
             const QVariantMap attachment = m_outbox.value(extra).value("attachment").toMap();
             if (attachment.isEmpty()) m_failedDrafts.insert(chat, text);
@@ -744,7 +885,7 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
             const QVariantMap attachment = m_outbox.value(extra).value("attachment").toMap();
             if (!attachment.isEmpty()) {
                 const QString key = chat + ":" + idString(object.value("id"));
-                const QString outcome = m_earlyAttachmentOutcomes.take(key);
+                const QString outcome = m_earlyAttachmentOutcomes.value(key);
                 const bool failed = outcome == "failed" || (chat == m_current &&
                     m_messages.value(object.value("id").toLongLong()).value("sendingState") == "messageSendingStateFailed");
                 if (failed) m_failedAttachments.insert(chat, attachment);
@@ -753,6 +894,8 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
                     m_failedAttachments.remove(chat);
                 }
             }
+            recordSendResult(object, pending.value("recordId").toString(),
+                m_earlyAttachmentOutcomes.take(chat + ":" + idString(object.value("id"))));
             m_outbox.remove(extra);
             upsertMessage(object);
             bool uncertain = false;
@@ -808,7 +951,7 @@ void TelegramStore::consume(const QVariantMap &object)
         chat.insert("readOutbox", idString(source.value("last_read_outbox_message_id")));
         chat.insert("lastMessageId", idString(source.value("last_message").toMap().value("id")));
         chat.insert("preview", source.value("last_message").toMap().isEmpty() ? QString() : messageText(source.value("last_message").toMap().value("content").toMap()).left(160));
-        if (!m_dirtyDrafts.contains(id)) m_drafts.insert(id, draftValue(source.value("draft_message")));
+        restoreChatDraft(id, source.value("draft_message"));
         setPositions(&chat, source.value("positions").toList());
         m_chats.insert(id, chat);
         rebuildChats();
@@ -836,7 +979,7 @@ void TelegramStore::consume(const QVariantMap &object)
             setPositions(&chat, object.value("positions").toList());
         } else if (type == "updateChatDraftMessage") {
             setPositions(&chat, object.value("positions").toList());
-            if (!m_dirtyDrafts.contains(chatId)) m_drafts.insert(chatId, draftValue(object.value("draft_message")));
+            restoreChatDraft(chatId, object.value("draft_message"));
         }
         rebuildChats();
         if (chatId == m_current) rebuildMessages();
@@ -847,11 +990,15 @@ void TelegramStore::consume(const QVariantMap &object)
         const QString attachmentKey = sendChat + ":" + idString(object.value("old_message_id"));
         if ((type == "updateMessageSendFailed" || type == "updateMessageSendSucceeded") && !m_sentAttachments.contains(attachmentKey)) {
             for (QMap<QString, QVariantMap>::const_iterator it = m_outbox.constBegin(); it != m_outbox.constEnd(); ++it)
-                if (it.value().value("chatId") == sendChat && !it.value().value("attachment").toMap().isEmpty()) {
+                if (it.value().value("chatId") == sendChat && !it.value().value("recordId").toString().isEmpty()) {
                     if (m_earlyAttachmentOutcomes.size() < 128)
                         m_earlyAttachmentOutcomes.insert(attachmentKey, type == "updateMessageSendFailed" ? "failed" : "succeeded");
                     break;
                 }
+        }
+        if (type == "updateMessageSendFailed" || type == "updateMessageSendSucceeded") {
+            const QString recordId = m_localMessages.take(attachmentKey);
+            recordSendResult(message, recordId, type == "updateMessageSendFailed" ? "failed" : "succeeded");
         }
         if (type == "updateMessageSendFailed" && m_sentAttachments.contains(attachmentKey))
             m_failedAttachments.insert(sendChat, m_sentAttachments.take(attachmentKey));
@@ -903,6 +1050,7 @@ void TelegramStore::consume(const QVariantMap &object)
 void TelegramStore::expireRequests()
 {
     const qlonglong now = m_clock.elapsed();
+    if (now >= m_nextCleanup && !m_account.isEmpty()) { m_nextCleanup = now + 60000; m_local.cleanup(); }
     bool expiredAny = false;
     QMap<QString, QVariantMap>::iterator it = m_requests.begin();
     while (it != m_requests.end()) {
@@ -913,6 +1061,7 @@ void TelegramStore::expireRequests()
         const bool current = pending.value("chatId") == m_current && pending.value("generation").toUInt() == m_generation;
         if (kind == "send") {
             pending.insert("expired", true); // Keep correlation for a late answer; never resend automatically.
+            m_local.transition(pending.value("recordId").toString(), "uncertain");
             if (m_outbox.contains(it.key())) m_outbox[it.key()].insert("delivery", ru("Результат отправки неизвестен"));
             if (pending.value("chatId") == m_current) m_error = ru("Нет ответа об отправке. Проверьте историю перед повтором.");
             ++it;

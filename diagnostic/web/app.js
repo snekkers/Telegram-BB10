@@ -5,20 +5,24 @@ if(initialToken)sessionStorage.setItem("berrygram-local-token",initialToken);
 const token = initialToken || sessionStorage.getItem("berrygram-local-token") || "";
 history.replaceState(null, "", location.pathname);
 let state = {}, previousPhase = "", chatId = "", pendingChat = null, messagesSignature = "", draftTimer, queue = Promise.resolve();
-let mediaUrls=[], attachment=null, attachmentUrl="", recorder=null, recordingStream=null, recordingTimer=null, sendingAttachment=false, recordingStarting=false, recordingGeneration=0;
+let mediaUrls=[], attachment=null, attachmentUrl="", recorder=null, recordingStream=null, recordingTimer=null, sendingAttachment=false, recordingStarting=false, recordingGeneration=0, suppressedAttachmentId="", restoringAttachment=false, pollingError="";
 const authHeaders = {"Authorization": "Bearer " + token};
 const labels = {phone:"Номер телефона с кодом страны", code:"Код входа", password:"Пароль двухэтапной проверки", email:"Адрес почты", emailCode:"Код из письма"};
-function command(action, extra={}) {
+function command(action, extra={}, fullResult=false) {
   const task = queue.then(async () => {
     const response = await fetch("/api/command", {method:"POST",headers:{...authHeaders,"Content-Type":"application/json"},body:JSON.stringify({action,...extra})});
     if (!response.ok) throw new Error("Команда не выполнена. Проверьте состояние клиента; текст остаётся в поле.");
     $("local-error").textContent="";
-    return true;
+    const result=await response.json();return fullResult?result:true;
   });
   queue = task.catch(error => {$("local-error").textContent=error.message;});
   return task.catch(() => false);
 }
-function flushDraft() { clearTimeout(draftTimer); return chatId ? command("draft", {chatId,text:$("draft").value}) : Promise.resolve(true); }
+async function flushDraft() {
+  clearTimeout(draftTimer);
+  if(attachment?.uploadId)await persistAttachment();
+  return chatId?command("draft",{chatId,text:$("draft").value}):true;
+}
 async function openChat(id) {
   stopRecording(true);await flushDraft(); pendingChat=id; $("send").disabled=true; $("draft").disabled=true;
   if (!await command("openChat",{chatId:id})) pendingChat=null;
@@ -35,38 +39,79 @@ $("credential-form").onsubmit=async event=>{
   event.preventDefault(); if(await command("submit",{value:$("credential").value})) $("credential").value="";
 };
 function canCompose() { return attachment ? !!state[{document:"canSendDocument",photo:"canSendPhoto",voice:"canSendVoice"}[attachment.kind]] : !!state.canSend; }
-function updateSend() { $("send").disabled=!canCompose()||!!pendingChat||sendingAttachment||recordingStarting||!!recorder||(!attachment&&!$("draft").value.trim()); }
-function clearAttachment() {
+function updateSend() { $("send").disabled=!canCompose()||!!pendingChat||sendingAttachment||recordingStarting||!!recorder||(!attachment&&!$("draft").value.trim())||(!!attachment&&!attachment.uploadId); }
+function clearAttachment(suppress=false) {
+  if(suppress)suppressedAttachmentId=attachment?.uploadId||"";
   if(attachmentUrl)URL.revokeObjectURL(attachmentUrl);attachmentUrl="";attachment=null;
   $("attachment").hidden=true;$("attachment-image").hidden=true;$("attachment-audio").hidden=true;$("attachment-audio").removeAttribute("src");
   $("file").value="";$("draft").maxLength=4096;updateSend();
 }
+function showAttachment() {
+  $("attachment-name").textContent=attachment.name+(attachment.file?" · "+Math.ceil(attachment.file.size/1024)+" КБ":" · сохранено на диске");
+  $("attachment-kind").value=attachment.kind;$("attachment").hidden=false;$("draft").maxLength=1024;updateSend();
+}
+async function persistAttachment() {
+  const selected=attachment;
+  if(!selected?.uploadId||selected.chatId!==chatId)return false;
+  return command("stageAttachment",{chatId:selected.chatId,uploadId:selected.uploadId,kind:selected.kind,
+    caption:$("draft").value,duration:selected.duration||0});
+}
 async function chooseAttachment(file, kind="document", duration=0) {
   clearAttachment();
-  if(file.size<=0 || file.size>50*1024*1024)throw new Error("Выберите непустой файл до 50 МБ.");
-  attachment={file,kind,duration,chatId,name:file.name,width:0,height:0};
-  attachmentUrl=URL.createObjectURL(file);
-  if(file.type==="image/jpeg" || file.type==="image/png") {
+  if(file.size<=0||file.size>50*1024*1024)throw new Error("Выберите непустой файл до 50 МБ.");
+  const selected={file,kind,duration,chatId,name:file.name,width:0,height:0};attachment=selected;
+  attachmentUrl=URL.createObjectURL(file);showAttachment();
+  if(file.type==="image/jpeg"||file.type==="image/png") {
     const image=new Image();image.src=attachmentUrl;await image.decode();
-    if(!attachment || attachment.file!==file)return;
-    attachment.width=image.naturalWidth;attachment.height=image.naturalHeight;
+    if(attachment!==selected)return;
+    selected.width=image.naturalWidth;selected.height=image.naturalHeight;
     $("attachment-image").src=attachmentUrl;$("attachment-image").hidden=false;
   }
   if(file.type.startsWith("audio/")){$("attachment-audio").src=attachmentUrl;$("attachment-audio").hidden=false;}
-  $("attachment-name").textContent=file.name+" · "+Math.ceil(file.size/1024)+" КБ";
-  $("attachment-kind").value=kind;$("attachment").hidden=false;$("draft").maxLength=1024;updateSend();
+  sendingAttachment=true;updateSend();$("attachment-name").textContent=file.name+" · сохраняется на Mac…";
+  try {
+    const response=await fetch("/api/upload",{method:"POST",headers:{...authHeaders,"Content-Type":"application/octet-stream",
+      "X-File-Name":encodeURIComponent(file.name),"X-Chat-Id":selected.chatId,
+      "X-Media-Info":encodeURIComponent(JSON.stringify({kind,duration,caption:$("draft").value}))},body:file});
+    if(!response.ok)throw new Error("Не удалось сохранить вложение. Проверьте размер файла и свободное место.");
+    selected.uploadId=(await response.json()).uploadId;
+    if(attachment!==selected||chatId!==selected.chatId)return;
+    if(!await persistAttachment())return;
+    showAttachment();
+  } finally{sendingAttachment=false;updateSend();}
+}
+async function restoreAttachment(item) {
+  if(!item?.recordId||attachment||restoringAttachment||sendingAttachment||recorder||recordingStarting||item.recordId===suppressedAttachmentId)return;
+  restoringAttachment=true;
+  const selected={...item,uploadId:item.recordId,chatId,name:item.name||"Сохранённое вложение"};attachment=selected;showAttachment();
+  try {
+    if(!item.path||!(/\.(png|jpe?g|m4a|mp3|ogg)$/i).test(selected.name))return;
+    const response=await fetch("/api/uploads/"+encodeURIComponent(item.recordId),{headers:authHeaders});
+    if(!response.ok)throw new Error("Сохранённая копия недоступна. Выберите исходный файл заново.");
+    const blob=await response.blob();
+    if(attachment!==selected)return;
+    attachmentUrl=URL.createObjectURL(blob);
+    if(blob.type.startsWith("image/")){$("attachment-image").src=attachmentUrl;$("attachment-image").hidden=false;}
+    if(blob.type.startsWith("audio/")){$("attachment-audio").src=attachmentUrl;$("attachment-audio").hidden=false;}
+  } catch(error){$("local-error").textContent=error.message;}
+  finally{restoringAttachment=false;}
 }
 $("attach").onclick=()=>$("file").click();
-$("file").onchange=async()=>{const file=$("file").files[0];if(file)try{await chooseAttachment(file);}catch(error){clearAttachment();$("local-error").textContent=error.message;}};
-$("attachment-kind").onchange=()=>{if(attachment){attachment.kind=$("attachment-kind").value;updateSend();}};
-$("attachment-audio").onloadedmetadata=()=>{if(attachment && !attachment.duration && Number.isFinite($("attachment-audio").duration))attachment.duration=Math.ceil($("attachment-audio").duration);};
-$("cancel-attachment").onclick=()=>{if(attachment?.uploadId)command("discardUpload",{chatId:attachment.chatId,uploadId:attachment.uploadId});clearAttachment();};
-$("recover-attachment").onclick=()=>{
-  const failed=state.failedAttachment;if(!failed?.uploadId)return;
-  clearAttachment();attachment={...failed,chatId, name:"Неотправленное вложение"};
-  $("attachment-name").textContent=attachment.name;$("attachment-kind").value=attachment.kind;$("attachment").hidden=false;
-  $("draft").value=failed.caption||"";$("draft").maxLength=1024;updateSend();
+$("file").onchange=async()=>{const file=$("file").files[0];if(file)try{await chooseAttachment(file);}catch(error){$("local-error").textContent=error.message;}};
+$("attachment-kind").onchange=async()=>{if(attachment){attachment.kind=$("attachment-kind").value;updateSend();await persistAttachment();}};
+$("attachment-audio").onloadedmetadata=()=>{if(attachment&&!attachment.duration&&Number.isFinite($("attachment-audio").duration)){attachment.duration=Math.ceil($("attachment-audio").duration);if(attachment.uploadId)persistAttachment();}};
+$("cancel-attachment").onclick=async()=>{
+  const selected=attachment;
+  if(selected?.uploadId&&!await command("discardUpload",{chatId:selected.chatId,uploadId:selected.uploadId}))return;
+  if(attachment===selected)clearAttachment(true);
 };
+$("recover-attachment").onclick=async()=>{
+  const destination=chatId;
+  const result=await command("recoverAttachment",{chatId:destination},true);
+  if(!result||chatId!==destination)return;
+  clearAttachment();$("draft").value=result.attachmentDraft.caption||"";await restoreAttachment(result.attachmentDraft);
+};
+$("cleanup").onclick=()=>command("cleanupUploads");
 function stopRecording(cancel=false) {
   if(cancel){recordingGeneration++;recordingStarting=false;}
   if(recorder?.state==="recording")recorder.stop();
@@ -108,14 +153,10 @@ $("send-form").onsubmit=async event=>{
     sendingAttachment=true;updateSend();
     try {
       if(selected.chatId!==destination)throw new Error("Заново выберите вложение для этого чата.");
-      if(!selected.uploadId){
-        const response=await fetch("/api/upload",{method:"POST",headers:{...authHeaders,"Content-Type":"application/octet-stream","X-File-Name":encodeURIComponent(selected.name),"X-Chat-Id":destination},body:selected.file});
-        if(!response.ok)throw new Error("Не удалось подготовить вложение. Проверьте размер файла и свободное место.");
-        selected.uploadId=(await response.json()).uploadId;
-      }
+      if(!selected.uploadId||!await persistAttachment())throw new Error("Вложение ещё не сохранено. Дождитесь подготовки.");
       if(chatId!==destination)return;
       accepted=await command("sendAttachment",{chatId:destination,uploadId:selected.uploadId,kind:selected.kind,caption:text,duration:selected.duration,width:selected.width,height:selected.height});
-      if(accepted&&attachment===selected)clearAttachment();
+      if(accepted&&attachment===selected)clearAttachment(true);
     } catch(error){$("local-error").textContent=error.message;}
     finally{sendingAttachment=false;updateSend();}
   } else accepted=await command("sendText",{chatId:destination,text});
@@ -153,14 +194,17 @@ function render(next) {
   if (state.chatId!==chatId) {stopRecording(true);clearAttachment();clearTimeout(draftTimer);chatId=state.chatId||"";$("draft").value=state.draft||"";messagesSignature="";}
   else if(document.activeElement!==$("draft") && state.draft && !$("draft").value)$("draft").value=state.draft;
   if (pendingChat===chatId)pendingChat=null;
+  if(!attachment&&state.attachmentDraft?.recordId)restoreAttachment(state.attachmentDraft);
+  $("recovery-warning").textContent=state.recoveryWarning||"";$("cache-summary").textContent=state.cacheSummary||"";
   $("draft").disabled=!canCompose()||!!pendingChat;updateSend();
   $("attach").disabled=(!state.canSendDocument&&!state.canSendPhoto&&!state.canSendVoice)||!!pendingChat||sendingAttachment||recordingStarting||!!recorder;
   $("record").disabled=!state.canSendVoice||!!pendingChat||sendingAttachment||recordingStarting;
-  $("attachment-kind").disabled=sendingAttachment;$("cancel-attachment").disabled=sendingAttachment;
-  $("recover-attachment").hidden=!state.failedAttachment?.uploadId;$("recover-attachment").disabled=!!attachment||sendingAttachment;
+  $("attachment-kind").disabled=sendingAttachment;$("cancel-attachment").disabled=sendingAttachment||restoringAttachment;
+  $("recover-attachment").hidden=!state.failedAttachment?.recordId;
+  $("recover-attachment").textContent=state.failedAttachment?.state==="uncertain"?"Подготовить повтор после проверки истории":"Восстановить неотправленное вложение";$("recover-attachment").disabled=!!attachment||sendingAttachment;
   $("draft").placeholder=state.composerHint||"Сообщение Telegram";
   $("chat-title").textContent=state.chatTitle||"Выберите чат"; $("chat-hint").textContent=state.loadingHistory?"Загрузка истории…":state.testFixture?"Тестовые данные":state.connection||"";
-  $("chat-error").textContent=state.error||""; $("recover").hidden=!state.failedDraft; $("recover").disabled=!!$("draft").value;
+  $("chat-error").textContent=state.error||""; $("recover").hidden=!state.failedDraft;$("recover").textContent=state.recoveryWarning?"Вернуть текст после проверки истории":"Вернуть неотправленный текст"; $("recover").disabled=!!$("draft").value;
   $("history").disabled=!state.canLoadHistory; $("more-chats").disabled=!state.canLoadChats; $("more-chats").textContent=state.loadingChats?"Загрузка…":"Загрузить ещё";
   $("mark-read").disabled=!ready||!chatId||!(state.messages||[]).length;
   $("chats").replaceChildren();
@@ -209,8 +253,9 @@ function render(next) {
 }
 async function poll(){
   if(!token){$("local-error").textContent="Откройте адрес, выданный скриптом запуска стенда.";return;}
-  try{const response=await fetch("/api/state",{headers:authHeaders});if(!response.ok)throw new Error("Стенд недоступен. Проверьте адрес запуска.");render(await response.json());}
-  catch(error){$("local-error").textContent=error.message;}
+  try{const response=await fetch("/api/state",{headers:authHeaders});if(!response.ok)throw new Error("Стенд недоступен. Проверьте адрес запуска.");
+    if(pollingError&&$("local-error").textContent===pollingError)$("local-error").textContent="";pollingError="";render(await response.json());}
+  catch(error){pollingError=error.message;$("local-error").textContent=pollingError;}
   setTimeout(poll,500);
 }
 poll();

@@ -1,5 +1,7 @@
 #include "TelegramSession.hpp"
 #include "TelegramStore.hpp"
+#include "LocalOutbox.hpp"
+#include "PrivateFile.hpp"
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
@@ -25,9 +27,9 @@ struct Peer {
     QString library;
     TelegramSession session;
     TelegramStore store;
-    Peer(int timeout = 60000)
-        : library(directory.path() + "/libtdjson.so"),
-          session("/source/tests/fake-chat-engine.py", library, directory.path() + "/private"),
+    Peer(int timeout = 60000, const QString &existing = QString())
+        : library((existing.isEmpty() ? directory.path() : existing) + "/libtdjson.so"),
+          session("/source/tests/fake-chat-engine.py", library, QFileInfo(library).absolutePath() + "/private"),
           store(&session, 0, timeout) {
         QFile file(library); file.open(QIODevice::WriteOnly); file.write("fixture"); file.close();
     }
@@ -70,7 +72,133 @@ private:
         QVERIFY(!control(peer, "emit", event).isEmpty());
     }
 
+    QString payload(const QString &data, const QString &name = "note.txt") {
+        QDir().mkpath(data + "/uploads/copy");
+        const QString path = data + "/uploads/copy/" + name;
+        QFile file(path); if (!file.open(QIODevice::WriteOnly)) return QString();
+        file.write("Synthetic retained input"); file.close(); return path;
+    }
+    QVariantMap attachment(const QString &path, const QString &caption = "caption") {
+        QVariantMap value; value.insert("type", "attachment"); value.insert("path", path);
+        value.insert("kind", "document"); value.insert("caption", caption); return value;
+    }
+
 private slots:
+    void journalSurvivesRestartAndSeparatesAccounts() {
+        QTemporaryDir directory; const QString data = directory.path() + "/private";
+        const QString file = payload(data); QString id;
+        {
+            LocalOutbox journal(data); QVERIFY(journal.open());
+            id = journal.prepare("123", A, attachment(file, QString::fromUtf8("Подпись 😀"))); QVERIFY(!id.isEmpty());
+            QVERIFY(journal.rememberDraft("123", A, QString::fromUtf8("Черновик 😀")));
+            QVERIFY(journal.transition(id, "pending", "6001"));
+        }
+        LocalOutbox restored(data); QVERIFY(restored.open());
+        QCOMPARE(restored.entry(id).value("state").toString(), QString("uncertain"));
+        QCOMPARE(restored.draft("123", A).toString(), QString::fromUtf8("Черновик 😀"));
+        QVERIFY(restored.latest("456", A, "attachment", QStringList() << "uncertain").isEmpty());
+        QVERIFY(!restored.draft("456", A).isValid());
+        QVERIFY(QFile::permissions(data + "/outbox.json") & QFile::ReadOwner);
+        QVERIFY(!(QFile::permissions(data + "/outbox.json") & QFile::ReadOther));
+    }
+
+    void cleanupOnlyRemovesOldConfirmedUnreferencedCopies() {
+        QTemporaryDir directory; const QString data = directory.path() + "/private";
+        LocalOutbox journal(data); QVERIFY(journal.open());
+        const QString sentFile = payload(data, "sent.txt"), pendingFile = payload(data, "pending.txt"), orphan = payload(data, "orphan.txt");
+        const QString sent = journal.prepare("123", A, attachment(sentFile)); QVERIFY(journal.transition(sent, "sent"));
+        const QString active = journal.prepare("123", B, attachment(pendingFile)); QVERIFY(journal.transition(active, "pending"));
+        QCOMPARE(journal.cleanup(), 0); QVERIFY(QFile::exists(sentFile));
+        const qlonglong tomorrow = QDateTime::currentDateTime().toTime_t() + 86401;
+        QCOMPARE(journal.cleanup(tomorrow), 1); QVERIFY(!QFile::exists(sentFile));
+        QVERIFY(QFile::exists(pendingFile)); QVERIFY(QFile::exists(orphan));
+        QVERIFY(journal.transition(active, "uncertain")); QCOMPARE(journal.cleanup(tomorrow + 864000), 0);
+        // A confirmed attempt sharing a file with an uncertain attempt must not delete it.
+        const QString second = journal.prepare("123", B, attachment(pendingFile)); QVERIFY(journal.transition(second, "sent"));
+        QCOMPARE(journal.cleanup(tomorrow + 864000), 0); QVERIFY(QFile::exists(pendingFile));
+    }
+
+    void malformedOrSymlinkJournalBlocksSendingAndCleanup() {
+        QTemporaryDir directory; const QString data = directory.path() + "/private";
+        { Peer initial(60000, directory.path()); ready(initial); }
+        const QString file = payload(data);
+        QFile broken(data + "/outbox.json"); QVERIFY(broken.open(QIODevice::WriteOnly)); broken.write("not JSON"); broken.close();
+        LocalOutbox corrupted(data); QVERIFY(!corrupted.open()); QCOMPARE(corrupted.cleanup(9999999999LL), 0); QVERIFY(QFile::exists(file));
+        QVERIFY(broken.remove());
+        QVERIFY(QFile::link(file, data + "/outbox.json"));
+        Peer peer(60000, directory.path()); ready(peer); open(peer);
+        QVERIFY(!peer.store.canSend()); QVERIFY(!peer.store.sendText("never sent"));
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0);
+        QCOMPARE(peer.store.cleanupUploads(), 0); QVERIFY(QFile::exists(file));
+    }
+
+    void failedJournalWriteDoesNotHandMessageToEngine() {
+        Peer peer; ready(peer); open(peer);
+        const QString file = payload(peer.directory.path() + "/private");
+        QVERIFY(QFile::link(file, peer.directory.path() + "/private/outbox.json"));
+        QVERIFY(!peer.store.sendText("must be durable first"));
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0);
+        QVERIFY(!peer.store.recoveryWarning().isEmpty()); QVERIFY(QFile::exists(file));
+    }
+
+    void selectedAttachmentAndCaptionRestoreAfterProcessRecreation() {
+        QTemporaryDir directory; const QString data = directory.path() + "/private";
+        QString file;
+        {
+            Peer peer(60000, directory.path()); ready(peer); open(peer); file = payload(data);
+            QVERIFY(peer.store.stageAttachment(file, "document", QString::fromUtf8("Начало 😀")));
+            peer.store.setDraft(QString::fromUtf8("Сохранённая подпись 😀")); peer.store.flushDrafts();
+            QVERIFY(peer.store.openChat(B)); open(peer, A);
+            QCOMPARE(peer.store.attachmentDraft().value("path").toString(), file);
+            QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0);
+        }
+        Peer recreated(60000, directory.path()); ready(recreated); open(recreated);
+        QCOMPARE(recreated.store.attachmentDraft().value("caption").toString(), QString::fromUtf8("Сохранённая подпись 😀"));
+        QCOMPARE(recreated.store.draftText(), QString::fromUtf8("Сохранённая подпись 😀"));
+        QCOMPARE(control(recreated, "stats").value("send_count").toInt(), 0);
+    }
+
+    void networkLossAndLateMediaResponseNeverRepeatSend() {
+        Peer peer(300); ready(peer); open(peer);
+        const QString file = payload(peer.directory.path() + "/private");
+        QVariantMap state = object("updateConnectionState"); state.insert("state", object("connectionStateWaitingForNetwork"));
+        QVERIFY(!control(peer, "emit", state).isEmpty());
+        QVERIFY(peer.store.sendAttachment(file, "document", "timeout-media"));
+        QTRY_VERIFY(!peer.store.sendBusy());
+        QVERIFY(peer.store.recoveryWarning().contains(QString::fromUtf8("Проверьте историю")));
+        QVERIFY(QFile::exists(file)); QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
+        state.insert("state", object("connectionStateReady")); QVERIFY(!control(peer, "emit", state).isEmpty());
+        QVERIFY(!control(peer, "releaseMedia").isEmpty());
+        QTRY_VERIFY(peer.store.recoveryWarning().isEmpty());
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1); QVERIFY(QFile::exists(file));
+    }
+
+    void engineExitRestoresUncertainAttachmentWithoutResubmission() {
+        Peer peer; ready(peer); open(peer);
+        const QString file = payload(peer.directory.path() + "/private");
+        QVERIFY(peer.store.sendAttachment(file, "document", "timeout-media"));
+        control(peer, "crash"); QTRY_COMPARE(peer.session.phase(), QString("failed"));
+        ready(peer); open(peer);
+        QCOMPARE(peer.store.failedAttachment().value("state").toString(), QString("uncertain"));
+        QVERIFY(peer.store.recoveryWarning().contains(QString::fromUtf8("Проверьте историю")));
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0);
+        QVERIFY(peer.store.recoverAttachment());
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0); QVERIFY(QFile::exists(file));
+    }
+
+    void unsentTextSurvivesRestartWithoutResubmission() {
+        QTemporaryDir directory;
+        {
+            Peer peer(250, directory.path()); ready(peer); open(peer);
+            QVERIFY(peer.store.sendText("timeout")); QTRY_VERIFY(!peer.store.sendBusy());
+            QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
+        }
+        Peer recreated(60000, directory.path()); ready(recreated); open(recreated);
+        QCOMPARE(recreated.store.failedDraft(), QString("timeout"));
+        QCOMPARE(recreated.store.takeFailedDraft(), QString("timeout"));
+        QCOMPARE(recreated.store.draftText(), QString("timeout"));
+        QCOMPARE(control(recreated, "stats").value("send_count").toInt(), 0);
+    }
     void attachmentsValidatePathsFormatsPermissionsAndRecovery() {
         Peer peer; ready(peer); open(peer);
         const QString directory = peer.directory.path() + "/private/uploads";
@@ -314,7 +442,8 @@ private slots:
         QVERIFY(peer.store.sendText("timeout"));
         QTRY_VERIFY(!peer.store.sendBusy());
         QCOMPARE(peer.store.messages().last().toMap().value("delivery").toString(), QString::fromUtf8("Результат отправки неизвестен"));
-        QVERIFY(peer.store.failedDraft().isEmpty());
+        QCOMPARE(peer.store.failedDraft(), QString("timeout"));
+        QVERIFY(peer.store.recoveryWarning().contains(QString::fromUtf8("Проверьте историю")));
         QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
         QVERIFY(!control(peer, "releaseSend").isEmpty());
         QTRY_VERIFY(!row(peer.store, "3001").isEmpty());

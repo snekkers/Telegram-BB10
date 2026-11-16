@@ -8,17 +8,17 @@
 #include <unistd.h>
 #include <cstdio>
 
-bool PrivateFile::read(const QString &path, QVariantMap *value)
+bool PrivateFile::read(const QString &path, QVariantMap *value, int maximumBytes)
 {
     const QByteArray name = QFile::encodeName(path);
     struct stat info;
-    if (::lstat(name.constData(), &info) != 0 || !S_ISREG(info.st_mode) || info.st_size > 65536 ||
+    if (::lstat(name.constData(), &info) != 0 || !S_ISREG(info.st_mode) || info.st_size > maximumBytes ||
         !QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner)) return false;
     QFile file(path);
-    return file.open(QIODevice::ReadOnly) && JsonCodec::decode(file.read(65537), value);
+    return file.open(QIODevice::ReadOnly) && JsonCodec::decode(file.read(maximumBytes + 1), value);
 }
 
-bool PrivateFile::write(const QString &path, const QVariantMap &value)
+bool PrivateFile::write(const QString &path, const QVariantMap &value, int maximumBytes)
 {
     QFileInfo destination(path);
     const QString directory = destination.absolutePath();
@@ -26,7 +26,7 @@ bool PrivateFile::write(const QString &path, const QVariantMap &value)
         QFileInfo(directory).isSymLink() || QFileInfo(path).isSymLink() ||
         !QFile::setPermissions(directory, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner)) return false;
     QByteArray bytes = JsonCodec::encode(value);
-    if (bytes.isEmpty() || bytes.size() > 65536) return false;
+    if (bytes.isEmpty() || bytes.size() > maximumBytes) return false;
     QTemporaryFile temporary(directory + "/.private-XXXXXX");
     if (!temporary.open() || !temporary.setPermissions(QFile::ReadOwner | QFile::WriteOwner) ||
         temporary.write(bytes) != bytes.size() || !temporary.flush() || ::fsync(temporary.handle()) != 0) return false;

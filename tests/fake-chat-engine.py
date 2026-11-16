@@ -13,6 +13,7 @@ loaded = False
 hold_next_history = False
 held_history = []
 held_sends = []
+held_media = []
 sent_count = 0
 last_only_local = False
 last_send = None
@@ -82,6 +83,10 @@ for line in sys.stdin:
     kind = query["@type"]
     if kind == "getOption":
         reply(query, "optionValueString", value="1.8.69")
+    elif kind == "getMe":
+        reply(query, "user", id=USER, first_name="Fixture", last_name="")
+    elif kind == "getMessage":
+        reply(query, "error", code=404, message="Fixture no longer has the temporary message")
     elif kind == "setTdlibParameters":
         assert query["api_id"] == 12345 and query["api_hash"] == "a" * 32
         send({"@type": "updateAuthorizationState", "authorization_state": {"@type": "authorizationStateReady"}})
@@ -175,6 +180,9 @@ for line in sys.stdin:
             mid = 6000 + sent_count
             outgoing = message(mid, query["chat_id"], "", True, {"@type": "messageSendingStatePending"})
             outgoing["content"] = {"@type": result_type, field: media, "caption": body["caption"]}
+            if caption == "timeout-media":
+                held_media.append((query, outgoing))
+                continue
             if caption == "fail-before-response":
                 failed = {**outgoing, "sending_state": {"@type": "messageSendingStateFailed", "error": {"code": 403}}}
                 send({"@type": "updateMessageSendFailed", "old_message_id": mid, "message": failed, "error": {"code": 403}})
@@ -237,6 +245,14 @@ for line in sys.stdin:
                   "message": message(1000, request["chat_id"], text, True,
                   {"@type": "messageSendingStateFailed", "error": {"code": 403}}),
                   "error": {"code": 403, "message": "private diagnostic"}})
+        elif op == "crash":
+            reply(query, "fixtureStats", send_count=sent_count)
+            sys.exit(0)
+        elif op == "releaseMedia":
+            for request, outgoing in held_media:
+                outgoing["sending_state"] = None
+                reply(request, kind="message", **{k:v for k,v in outgoing.items() if k != "@type"})
+            held_media.clear()
         elif op == "releaseSend":
             for request in held_sends:
                 final = message(3001, request["chat_id"], "timeout", True)

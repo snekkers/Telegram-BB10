@@ -69,6 +69,7 @@ bool TelegramController::openMedia(const QString &id)
 
 QString TelegramController::newUploadPath(const QString &name)
 {
+    m_store->cleanupUploads();
     QDir uploads(m_store->uploadDirectory());
     if (QFileInfo(uploads.absolutePath()).isSymLink() || !QDir().mkpath(uploads.absolutePath())) return QString();
     QFile::setPermissions(uploads.absolutePath(), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
@@ -108,26 +109,42 @@ void TelegramController::fileSelected(const QStringList &files)
     if (target.isEmpty() || !QFile::copy(input.absoluteFilePath(), target)) {
         m_mediaError = QString::fromUtf8("Не удалось скопировать вложение в каталог приложения."); emit changed(); return;
     }
-    cancelAttachment();
+    leaveAttachment();
     QFile::setPermissions(target, QFile::ReadOwner | QFile::WriteOwner);
-    m_attachment.insert("path", target); m_attachment.insert("kind", m_pickerKind); m_attachmentChat = m_pickerChat;
+    m_attachment.insert("path", target); m_attachment.insert("complete", true); m_attachment.insert("kind", m_pickerKind); m_attachmentChat = m_pickerChat;
+    if (!m_store->stageAttachment(target, m_pickerKind, m_store->draftText())) {
+        m_mediaError = m_store->errorText(); emit changed(); return;
+    }
+    m_attachment = m_store->attachmentDraft();
     // Imported voice files have unknown duration; use the recorder for voice notes.
     if (m_pickerKind == "voice") m_mediaError = QString::fromUtf8("Для голосового используйте запись; готовый аудиофайл можно отправить как документ.");
     emit changed();
 }
 
-void TelegramController::cancelAttachment()
+void TelegramController::leaveAttachment()
 {
     m_recordLimit.stop();
     if (m_recording) { m_recording = false; m_recorder.reset(); }
-    // Only the currently unsent copy is removed; submitted files are retained for TDLib.
-    if (!m_attachment.value("retained").toBool()) QFile::remove(m_attachment.value("path").toString());
+    // Only unfinished recordings are temporary; prepared inputs belong to the journal.
+    if (m_attachment.value("recordId").toString().isEmpty() && !m_attachment.isEmpty() && !m_attachment.value("complete").toBool())
+        QFile::remove(m_attachment.value("path").toString());
     m_attachment.clear(); m_attachmentChat.clear(); m_mediaError.clear(); emit changed();
+}
+
+void TelegramController::cancelAttachment()
+{
+    // Stop the microphone even when a storage error prevents changing the journal.
+    leaveAttachment();
+    if (!m_store->clearAttachmentDraft()) { m_mediaError = m_store->errorText(); emit changed(); }
 }
 
 void TelegramController::checkAttachmentChat()
 {
-    if (!m_attachment.isEmpty() && (!m_store->ready() || m_attachmentChat != m_store->currentChatId())) cancelAttachment();
+    if ((!m_store->ready() || m_attachmentChat != m_store->currentChatId()) && !m_attachment.isEmpty()) leaveAttachment();
+    if (!m_recording && m_store->ready()) {
+        const QVariantMap restored = m_store->attachmentDraft();
+        if (m_attachment != restored) { m_attachment = restored; m_attachmentChat = m_store->currentChatId(); emit changed(); }
+    }
 }
 
 void TelegramController::toggleRecording()
@@ -152,11 +169,16 @@ void TelegramController::finishRecording()
     m_recording = false; m_recordLimit.stop();
     if (m_recorder.reset() != bb::multimedia::MediaError::None) { recordingError(); return; }
     QFile::setPermissions(m_attachment.value("path").toString(), QFile::ReadOwner | QFile::WriteOwner);
-    m_attachment.insert("duration", seconds); emit changed();
+    m_attachment.insert("duration", seconds); m_attachment.insert("complete", true);
+    if (!m_store->stageAttachment(m_attachment.value("path").toString(), "voice", m_store->draftText(), seconds)) {
+        m_mediaError = m_store->errorText(); emit changed(); return;
+    }
+    m_attachment = m_store->attachmentDraft(); emit changed();
 }
 
 void TelegramController::recordingError()
 {
+    if (!m_recording && (m_attachment.isEmpty() || !m_attachment.value("recordId").toString().isEmpty())) return;
     cancelAttachment(); m_mediaError = QString::fromUtf8("Не удалось записать голос. Проверьте разрешение микрофона."); emit changed();
 }
 
@@ -173,8 +195,9 @@ bool TelegramController::sendSelected(const QString &caption)
 void TelegramController::recoverAttachment()
 {
     if (m_store->failedAttachment().isEmpty()) return;
-    cancelAttachment(); m_attachment = m_store->failedAttachment(); m_attachment.insert("retained", true);
-    m_attachmentChat = m_store->currentChatId(); m_store->setDraft(m_attachment.value("caption").toString()); emit changed();
+    leaveAttachment();
+    if (!m_store->recoverAttachment()) { m_mediaError = m_store->errorText(); emit changed(); return; }
+    m_attachment = m_store->attachmentDraft(); m_attachmentChat = m_store->currentChatId(); emit changed();
 }
 
 bool TelegramController::previewAttachment()

@@ -4,6 +4,7 @@ const fs=require('node:fs'), vm=require('node:vm'), assert=require('node:assert/
 const root=path.resolve(__dirname,'..'), elements=new Map(), timers=new Map();
 const reportPath=path.join(root,'build/macos-development/recording-tests.json');
 fs.rmSync(reportPath,{force:true});
+let uploads=0, sends=0;
 let nextTimer=1, permissionCalls=0, resolvePermission, rejectPermission, recorderCount=0;
 function element(){return {value:'',hidden:false,disabled:false,textContent:'',firstChild:{textContent:''},
   className:'',scrollHeight:100,scrollTop:0,clientHeight:100,append(){},replaceChildren(){},setAttribute(){},
@@ -22,7 +23,12 @@ class Recorder {
 const sandbox={document,MediaRecorder:Recorder,window:{MediaRecorder:Recorder},Blob,File,
   navigator:{mediaDevices:{getUserMedia(){permissionCalls++;return new Promise((resolve,reject)=>{resolvePermission=resolve;rejectPermission=reject;});}}},
   URL:{createObjectURL(){return 'blob:synthetic';},revokeObjectURL(){}},location:{hash:'#fixture',pathname:'/'},history:{replaceState(){}},
-  sessionStorage:{setItem(){},getItem(){return 'fixture';}},fetch(){return new Promise(()=>{});},
+  sessionStorage:{setItem(){},getItem(){return 'fixture';}},fetch(url, options){
+    if(url==='/api/state')return new Promise(()=>{});
+    if(url==='/api/upload'){uploads++;return Promise.resolve({ok:true,json:async()=>({uploadId:'a'.repeat(32)})});}
+    const command=JSON.parse(options.body);if(command.action==='sendAttachment'||command.action==='sendText')sends++;
+    return Promise.resolve({ok:true,json:async()=>({ok:true})});
+  },
   setTimeout(callback,delay){const id=nextTimer++;timers.set(id,{callback,delay});return id;},clearTimeout(id){timers.delete(id);}};
 vm.createContext(sandbox);vm.runInContext(fs.readFileSync(path.join(root,'diagnostic/web/app.js'),'utf8'),sandbox);
 const run=code=>vm.runInContext(code,sandbox), record=()=>elements.get('record').onclick();
@@ -38,8 +44,8 @@ async function main(){
   assert.equal(run('recorder.state'),'recording');assert.equal(elements.get('send').disabled,true);
   await record();await tick();
   assert.ok(active.stops>0);assert.equal(run('attachment.kind'),'voice');assert.equal(run('attachment.duration'),1);
-  assert.equal(run('attachment.uploadId'),undefined); // Finishing prepares a preview; it never submits.
-  elements.get('cancel-attachment').onclick();assert.equal(run('attachment'),null);
+  assert.equal(run('attachment.uploadId'),'a'.repeat(32));assert.equal(uploads,1);assert.equal(sends,0); // Only a private local copy is created.
+  await elements.get('cancel-attachment').onclick();assert.equal(run('attachment'),null);
   starting=record();const interrupted=stream();resolvePermission(interrupted);await starting;
   chat('2');await tick();assert.ok(interrupted.stops>0);assert.equal(run('attachment'),null);
   assert.equal(run('recorder'),null);assert.ok(!Array.from(timers.values()).some(timer=>timer.delay===300000));

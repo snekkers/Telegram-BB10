@@ -40,8 +40,8 @@ def main():
               "not_checked": ["real account login", "real Telegram chat traffic", "BB10 runtime"],
               "visual_qa": {"browser": "Codex in-app browser", "synthetic_data": True,
                             "checks": ["initialization", "chat list", "keyboard send", "media download/display",
-                                       "draft restored after chat switch", "page reload", "narrow and desktop layout", "attachment preview and manual recovery", "synthetic M4A preview/player metadata"],
-                            "screenshot": "build/macos-development/screenshots/fixture-media.jpg"}}
+                                       "draft restored after chat switch", "page reload", "narrow and desktop layout", "attachment preview and manual recovery", "synthetic M4A preview/player metadata", "persistent selection after full server/core restart", "protected draft after cache cleanup"],
+                            "screenshot": "build/macos-development/screenshots/fixture-durable.jpg"}}
     (WORK / "verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print("Native macOS build, dependencies, integration tests and visual QA recorded")
 

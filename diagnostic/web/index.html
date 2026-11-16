@@ -36,10 +36,11 @@
         <label class="search-label">Поиск по загруженным чатам<input id="search" type="search" placeholder="Название чата · ⌘F" autocomplete="off"></label>
         <div id="chats" role="list"></div>
         <button id="more-chats" class="secondary full">Загрузить ещё</button>
+        <p id="cache-summary" class="small muted"></p><button id="cleanup" class="text">Очистить старые копии</button>
       </aside>
       <section class="conversation">
         <div class="chat-head"><div><h2 id="chat-title">Выберите чат</h2><span id="chat-hint" class="small muted">Переписка появится здесь</span></div><div class="row"><button id="mark-read" class="text" disabled>Прочитано</button><button id="history" class="secondary" disabled>Ранее</button></div></div>
-        <p id="chat-error" class="error" role="alert"></p>
+        <p id="chat-error" class="error" role="alert"></p><p id="recovery-warning" class="recovery-warning" role="status"></p>
         <div id="messages" aria-live="polite"><p class="empty">Выберите переписку в списке слева.</p></div>
         <div class="composer">
           <div class="attachment-tools"><button id="attach" type="button" class="text" disabled>Прикрепить файл</button><button id="record" type="button" class="text" disabled>Записать голос</button><span id="record-status" class="small muted" role="status"></span><input id="file" type="file" hidden></div>
@@ -48,6 +49,6 @@
       </section>
     </section>
   </main>
-  <footer><span id="local-error" role="alert"></span><span>Локальный стенд · 127.0.0.1 · 0.5.0</span></footer>
+  <footer><span id="local-error" role="alert"></span><span>Локальный стенд · 127.0.0.1 · 0.6.0</span></footer>
 </body>
 </html>

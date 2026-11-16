@@ -50,6 +50,7 @@ Page {
         title: chatPage.liveChat ? (_live.currentChatTitle || "Telegram") : _chat.currentChatTitle
     }
     actions: [
+        ActionItem { title: qsTr("Очистить старые копии"); enabled: chatPage.liveChat && _live.ready; onTriggered: _live.cleanupUploads() },
         ActionItem { title: qsTr("Прикрепить файл"); enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("document") },
         ActionItem { title: qsTr("Отправить фото"); enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("photo") },
         ActionItem { title: _live.recording ? qsTr("Завершить запись") : qsTr("Записать голос"); enabled: chatPage.liveChat && _live.canAttach; onTriggered: _live.toggleRecording() },
@@ -173,6 +174,7 @@ Page {
                 }
             ]
         }
+        Label { visible: chatPage.liveChat && _live.recoveryWarning.length > 0; text: _live.recoveryWarning; multiline: true; textFormat: TextFormat.Plain; textStyle.base: SystemDefaults.TextStyles.SmallText }
         Label { visible: chatPage.liveChat && _live.mediaError.length > 0; text: _live.mediaError; multiline: true; textFormat: TextFormat.Plain }
         Label { visible: chatPage.liveChat && _live.recording; text: qsTr("Идёт запись · до 5 минут"); textStyle.base: SystemDefaults.TextStyles.SmallText }
         Container {
@@ -193,7 +195,7 @@ Page {
         Button {
             visible: chatPage.liveChat && _live.failedDraft.length > 0
             enabled: messageField.text.length === 0
-            text: qsTr("Вернуть неотправленный текст")
+            text: _live.recoveryWarning.length > 0 ? qsTr("Вернуть текст после проверки истории") : qsTr("Вернуть неотправленный текст")
             horizontalAlignment: HorizontalAlignment.Fill
             onClicked: messageField.text = _live.takeFailedDraft()
         }

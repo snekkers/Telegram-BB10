@@ -28,3 +28,6 @@ OTHER_FILES += $$PWD/bar-descriptor.xml \
 
 # The Cascades SDK chooses architecture-specific output directories for debug builds.
 # Build scripts stage the finished executable into bin/ for BAR packaging.
+
+SOURCES += $$PWD/src/LocalOutbox.cpp
+HEADERS += $$PWD/src/LocalOutbox.hpp

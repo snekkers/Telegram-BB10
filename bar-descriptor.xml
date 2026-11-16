@@ -2,8 +2,8 @@
 <qnx xmlns="http://www.qnx.com/schemas/application/1.0">
     <id>org.example.berrygram</id>
     <name>Berrygram</name>
-    <versionNumber>0.5.0</versionNumber>
-    <buildId>5</buildId>
+    <versionNumber>0.6.0</versionNumber>
+    <buildId>6</buildId>
     <description>Experimental native Telegram client for BlackBerry Classic.</description>
     <author>Berrygram Developer</author>
 

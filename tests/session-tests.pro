@@ -8,3 +8,6 @@ SOURCES += session-tests.cpp ../src/TelegramSession.cpp ../src/JsonCodec.cpp ../
 HEADERS += ../src/TelegramSession.hpp ../src/JsonCodec.hpp ../src/TelegramStore.hpp
 SOURCES += ../src/PrivateFile.cpp
 HEADERS += ../src/PrivateFile.hpp
+
+SOURCES += ../src/LocalOutbox.cpp
+HEADERS += ../src/LocalOutbox.hpp

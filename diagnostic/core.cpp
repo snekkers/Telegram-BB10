@@ -51,6 +51,8 @@ private slots:
         state.insert("canSendPhoto", m_store.canSendMedia("photo"));
         state.insert("canSendVoice", m_store.canSendMedia("voice"));
         state.insert("failedAttachment", m_store.failedAttachment());
+        state.insert("attachmentDraft", m_store.attachmentDraft());
+        state.insert("recoveryWarning", m_store.recoveryWarning()); state.insert("cacheSummary", m_store.cacheSummary());
         state.insert("canSend", m_store.canSend()); state.insert("composerHint", m_store.composerHint());
         QByteArray bytes = JsonCodec::encode(state);
         if (bytes != m_previous) { output(bytes); m_previous = bytes; }
@@ -88,12 +90,19 @@ private:
         else if (action == "closeChat") m_store.closeChat();
         else if (action == "sendText") ok = command.value("chatId").toString() == m_store.currentChatId() &&
             !m_store.currentChatId().isEmpty() && m_store.sendText(command.value("text").toString());
+        else if (action == "stageAttachment") ok = command.value("chatId").toString() == m_store.currentChatId() &&
+            m_store.stageAttachment(command.value("path").toString(), command.value("kind").toString(), command.value("caption").toString(), command.value("duration").toInt());
+        else if (action == "discardUpload") ok = command.value("chatId").toString() == m_store.currentChatId() &&
+            command.value("uploadId").toString() == m_store.attachmentDraft().value("recordId").toString() && m_store.clearAttachmentDraft();
+        else if (action == "recoverAttachment") ok = command.value("chatId").toString() == m_store.currentChatId() && m_store.recoverAttachment();
+        else if (action == "uploadRecord") ok = command.value("chatId").toString() == m_store.currentChatId() && !m_store.uploadRecord(command.value("uploadId").toString()).isEmpty();
+        else if (action == "cleanupUploads") m_store.cleanupUploads();
         else if (action == "sendAttachment") ok = command.value("chatId").toString() == m_store.currentChatId() &&
             !m_store.currentChatId().isEmpty() && m_store.sendAttachment(command.value("path").toString(), command.value("kind").toString(),
                 command.value("caption").toString(), command.value("duration").toInt(), command.value("width").toInt(), command.value("height").toInt());
         else if (action == "draft") {
             ok = command.value("chatId").toString() == m_store.currentChatId() && !m_store.currentChatId().isEmpty();
-            if (ok) m_store.setDraft(command.value("text").toString());
+            if (ok) { m_store.setDraft(command.value("text").toString()); m_store.flushDrafts(); }
         }
         else if (action == "search") m_store.setSearchQuery(command.value("text").toString());
         else if (action == "nextUnread") ok = m_store.openChat(m_store.nextUnreadChat());
@@ -105,7 +114,10 @@ private:
         else if (action == "loadHistory") m_store.loadMoreHistory();
         else ok = false;
         QVariantMap result; result.insert("@type", "commandResult");
-        result.insert("id", command.value("id")); result.insert("ok", ok); output(JsonCodec::encode(result));
+        result.insert("id", command.value("id")); result.insert("ok", ok);
+        if (ok && (action == "stageAttachment" || action == "recoverAttachment")) result.insert("attachmentDraft", m_store.attachmentDraft());
+        if (ok && action == "uploadRecord") result.insert("uploadRecord", m_store.uploadRecord(command.value("uploadId").toString()));
+        output(JsonCodec::encode(result));
         schedule();
     }
     TelegramSession m_session;
