@@ -1,0 +1,120 @@
+--- a/tdutils/td/utils/port/platform.h
++++ b/tdutils/td/utils/port/platform.h
+@@ -58,6 +58,8 @@
+ #elif defined(__sun)
+   #define TD_SOLARIS 1
+   // TD_ILLUMOS can be already defined by CMake
++#elif defined(__QNXNTO__)
++  #define TD_QNX 1
+ #elif defined(__unix__)  // all unices not caught above
+   #define TD_UNIX_UNKNOWN 1
+   #define TD_CYGWIN 1
+--- a/tdutils/td/utils/port/config.h
++++ b/tdutils/td/utils/port/config.h
+@@ -21,6 +21,9 @@
+   #define TD_EVENTFD_LINUX 1
+ #elif TD_FREEBSD || TD_OPENBSD || TD_NETBSD
+   #define TD_POLL_KQUEUE 1
++  #define TD_EVENTFD_BSD 1
++#elif TD_QNX
++  #define TD_POLL_POLL 1
+   #define TD_EVENTFD_BSD 1
+ #elif TD_CYGWIN
+   #define TD_POLL_SELECT 1
+--- a/tdutils/td/utils/port/uname.cpp
++++ b/tdutils/td/utils/port/uname.cpp
+@@ -222,6 +222,8 @@
+     return "OpenBSD";
+ #elif TD_NETBSD
+     return "NetBSD";
++#elif TD_QNX
++    return "BlackBerry 10 / QNX";
+ #elif TD_CYGWIN
+     return "Cygwin";
+ #else
+--- a/tdutils/td/utils/port/path.cpp
++++ b/tdutils/td/utils/port/path.cpp
+@@ -343,6 +343,11 @@
+ }
+ 
+ Result<bool> walk_path_dir(string &path, FileFd fd, const WalkFunction &func) {
++#if TD_QNX
++  // BB10 libc has no fdopendir. Use the existing path-based directory walker.
++  fd.close();
++  return walk_path_dir(path, func);
++#else
+   auto native_fd = fd.move_as_native_fd();
+   auto *subdir = fdopendir(native_fd.fd());
+   if (subdir == nullptr) {
+@@ -350,6 +355,7 @@
+   }
+   native_fd.release();
+   return walk_path_dir(path, subdir, func);
++#endif
+ }
+ 
+ Result<bool> walk_path_dir(string &path, const WalkFunction &func) {
+--- a/tdutils/td/utils/port/rlimit.cpp
++++ b/tdutils/td/utils/port/rlimit.cpp
+@@ -10,8 +10,8 @@
+ #include "td/utils/port/config.h"
+ 
+ #if TD_PORT_POSIX
++#include <sys/time.h>
+ #include <sys/resource.h>
+-#include <sys/time.h>
+ #include <sys/types.h>
+ #endif
+ 
+--- a/tdutils/td/utils/port/signals.cpp
++++ b/tdutils/td/utils/port/signals.cpp
+@@ -31,7 +31,7 @@
+ 
+ namespace td {
+ 
+-#if TD_PORT_POSIX && !TD_DARWIN_TV_OS && !TD_DARWIN_WATCH_OS
++#if TD_PORT_POSIX && !TD_DARWIN_TV_OS && !TD_DARWIN_WATCH_OS && !TD_QNX
+ static Status protect_memory(void *addr, size_t len) {
+   if (mprotect(addr, len, PROT_NONE) != 0) {
+     return OS_ERROR("mprotect failed");
+@@ -41,7 +41,9 @@
+ #endif
+ 
+ Status setup_signals_alt_stack() {
+-#if TD_PORT_POSIX && !TD_DARWIN_TV_OS && !TD_DARWIN_WATCH_OS
++#if TD_QNX
++  return Status::Error("Alternate signal stacks are not supported by BB10 libc");
++#elif TD_PORT_POSIX && !TD_DARWIN_TV_OS && !TD_DARWIN_WATCH_OS
+   auto page_size = getpagesize();
+   auto stack_size = (MINSIGSTKSZ + 16 * page_size - 1) / page_size * page_size;
+ 
+@@ -82,7 +84,13 @@
+   for (auto signal : signals) {
+     sigaddset(&act.sa_mask, signal);
+   }
+-  act.sa_flags = SA_RESTART | SA_ONSTACK;
++  act.sa_flags = 0;
++#ifdef SA_RESTART
++  act.sa_flags |= SA_RESTART;
++#endif
++#ifdef SA_ONSTACK
++  act.sa_flags |= SA_ONSTACK;
++#endif
+   set_handler(act, func);
+ 
+   for (auto signal : signals) {
+--- a/tdutils/td/utils/port/Stat.cpp
++++ b/tdutils/td/utils/port/Stat.cpp
+@@ -118,7 +118,12 @@
+ };
+ 
+ Stat from_native_stat(const struct ::stat &buf) {
++#if TD_QNX
++  // BB10 stat exposes access/modification times with one-second resolution.
++  const std::pair<int, int> time_nsec{0, 0};
++#else
+   auto time_nsec = TimeNsec<struct ::stat>::get(buf);
++#endif
+ 
+   Stat res;
+   res.atime_nsec_ = static_cast<uint64>(buf.st_atime) * 1000000000 + time_nsec.first;

@@ -1,0 +1,18 @@
+set(CMAKE_SYSTEM_NAME QNX)
+set(CMAKE_SYSTEM_VERSION 8.0.0)
+set(CMAKE_SYSTEM_PROCESSOR armv7)
+
+set(CMAKE_C_COMPILER /root/qnx800/bin/arm-blackberry-qnx8eabi-gcc)
+set(CMAKE_CXX_COMPILER /root/qnx800/bin/arm-blackberry-qnx8eabi-g++)
+set(CMAKE_AR /root/qnx800/bin/arm-blackberry-qnx8eabi-ar)
+set(CMAKE_RANLIB /root/qnx800/bin/arm-blackberry-qnx8eabi-ranlib)
+set(CMAKE_STRIP /root/qnx800/bin/arm-blackberry-qnx8eabi-strip)
+
+set(CMAKE_FIND_ROOT_PATH /work/prefix /root/qnx800/arm-blackberry-qnx8eabi /root/qnx800)
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+set(CMAKE_C_FLAGS_INIT "-I /project/build/porting/clang-include")
+set(CMAKE_CXX_FLAGS_INIT "-I /project/build/porting/clang-include -Wno-ignored-attributes")

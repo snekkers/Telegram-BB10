@@ -1,0 +1,8 @@
+GNU runtime license texts downloaded from the GCC 9.3.0 source release:
+
+- [COPYING3](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.3.0/COPYING3),
+  SHA-256 `8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903`.
+- [COPYING.RUNTIME](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.3.0/COPYING.RUNTIME),
+  SHA-256 `9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74`.
+
+These accompany the GCC runtime files in the local diagnostic bundle.

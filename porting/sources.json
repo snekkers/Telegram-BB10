@@ -1,0 +1,38 @@
+{
+  "gcc9": {
+    "repository": "https://github.com/sw7ft/berrycore",
+    "commit": "ffa18de9bf2867d5beb94d4a89e2930bee786d54",
+    "url": "https://media.githubusercontent.com/media/sw7ft/berrycore/ffa18de9bf2867d5beb94d4a89e2930bee786d54/toolchain/gcc-9.3.0-qnx8.tar.gz",
+    "filename": "gcc-9.3.0-qnx8.tar.gz",
+    "sha256": "f8066a09cf285828a6d7a8358e6c6b381d72cfedbfcfe8c784bfcad1bf9fdada",
+    "destination": "gcc9",
+    "root": "gcc-9.3.0-berrycore"
+  },
+  "tdlib": {
+    "repository": "https://github.com/tdlib/td",
+    "commit": "4c6377aa7386c39217878a9a56d581922ad37ca4",
+    "url": "https://codeload.github.com/tdlib/td/tar.gz/4c6377aa7386c39217878a9a56d581922ad37ca4",
+    "filename": "tdlib-4c6377aa.tar.gz",
+    "sha256": "472015605fffa826bfba6ccf7d888905b436ecce94c8a6826203792edfbe5731",
+    "destination": "source",
+    "root": "td-4c6377aa7386c39217878a9a56d581922ad37ca4"
+  },
+  "openssl": {
+    "repository": "https://github.com/openssl/openssl",
+    "version": "3.5.9",
+    "url": "https://github.com/openssl/openssl/releases/download/openssl-3.5.9/openssl-3.5.9.tar.gz",
+    "filename": "openssl-3.5.9.tar.gz",
+    "sha256": "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a",
+    "destination": "source",
+    "root": "openssl-3.5.9"
+  },
+  "zlib": {
+    "repository": "https://github.com/madler/zlib",
+    "version": "1.3.2",
+    "url": "https://github.com/madler/zlib/releases/download/v1.3.2/zlib-1.3.2.tar.gz",
+    "filename": "zlib-1.3.2.tar.gz",
+    "sha256": "bb329a0a2cd0274d05519d61c667c062e06990d72e125ee2dfa8de64f0119d16",
+    "destination": "source",
+    "root": "zlib-1.3.2"
+  }
+}
