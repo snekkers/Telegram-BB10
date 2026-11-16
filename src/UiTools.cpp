@@ -238,6 +238,8 @@ void UiTools::finishCheck()
         m_result.insert("multiline",field!=0);
         if(field) {
             m_result.insert("draft",field->text());
+            m_result.insert("composer_enabled",field->isEnabled());
+            m_result.insert("composer_focused",field->isFocused());
             m_result.insert("max_lines",field->autoSize()->maxLineCount());
             m_result.insert("composer_height",field->property("measuredHeight"));
         }

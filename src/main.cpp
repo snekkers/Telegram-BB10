@@ -6,6 +6,8 @@
 #include "SearchController.hpp"
 #include "AutoPager.hpp"
 #include "AvatarImages.hpp"
+#include "EmojiView.hpp"
+#include <QResource>
 
 #include <bb/cascades/AbstractPane>
 #include <bb/cascades/Application>
@@ -25,6 +27,8 @@ Q_DECL_EXPORT int main(int argc, char **argv)
         bb::cascades::Color::fromARGB(0xff5288b7), bb::cascades::Color::fromARGB(0xff42739d));
     qmlRegisterType<AutoPager>("Berrygram", 1, 0, "AutoPager");
     qmlRegisterType<AvatarImage>("Berrygram",1,0,"AvatarImage");
+    QResource::registerResource("app/native/assets/emoji.rcc");
+    qmlRegisterType<EmojiView>("Berrygram",1,0,"EmojiView");
     ChatController controller;
     TelegramSession telegram;
     TelegramStore store(&telegram);

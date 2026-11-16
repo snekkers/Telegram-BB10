@@ -988,7 +988,7 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
                 m_historyEnd = true;
             if (oldest) m_historyCursor = oldest;
             rebuildMessages();
-            if (pending.value("initial").toBool()) emit scrollRequested();
+            if (pending.value("initial").toBool()) { markRead(); emit scrollRequested(); }
         }
     } else if (kind == "download") {
         if (error) {

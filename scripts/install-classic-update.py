@@ -53,7 +53,7 @@ try:
         with s.open(job,'wb') as f:
             s.chmod(job,0o666)
             f.write(('action::install\npackage_location::'+remote+'\nextras::\n').encode())
-        deadline=time.monotonic()+120
+        deadline=time.monotonic()+600
         while time.monotonic()<deadline:
             with s.open(job,'rb') as f:status=f.read().decode()
             if 'result::success\n' in status:break

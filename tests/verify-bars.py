@@ -38,6 +38,7 @@ def main():
             for source in (ROOT / "assets").rglob("*"):
                 if source.is_file() and source.suffix in {".js", ".png", ".amd", ".txt"}:
                     assert archive.read("native/assets/" + source.relative_to(ROOT / "assets").as_posix()) == source.read_bytes()
+            assert archive.read("native/assets/emoji.rcc") == (ROOT / "assets/emoji.rcc").read_bytes()
             binary = archive.read("native/berrygram")
             assert binary[:6] == b"\x7fELF\x01\x01"
             assert struct.unpack_from("<H", binary, 18)[0] == machine

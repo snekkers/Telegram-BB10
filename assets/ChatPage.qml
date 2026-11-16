@@ -293,13 +293,10 @@ Page {
                                 textStyle.color: Color.create(Ui.blue)
                                 bottomMargin: ui.du(0.4)
                             }
-                            Label {
+                            EmojiLabel {
                                 visible: (ListItemData.text || "").length > 0
-                                text: ListItemData.text
-                                textFormat: TextFormat.Plain
-                                multiline: true
-                                textStyle.color: Color.create(Ui.ink)
-                                maxWidth: Math.min(ui.du(54), messageItem.ListItem.view.rowWidth - ui.du(15))
+                                text: ListItemData.text || ""
+                                textWidth: Math.min(ui.du(54), messageItem.ListItem.view.rowWidth - ui.du(15))
                                 topMargin: 0; bottomMargin: 0
                             }
                             ImageView {
@@ -423,7 +420,7 @@ Page {
                 objectName: "messageField"
                 property real measuredHeight: 0
                 hintText: chatPage.liveChat ? _live.composerHint : qsTr("Сообщение · демо")
-                enabled: !chatPage.liveChat || _live.canSendSelected
+                enabled: chatPage.composerVisible
                 inputMode: TextAreaInputMode.Chat
                 autoSize.maxLineCount: 4
                 scrollMode: TextAreaScrollMode.Stiff

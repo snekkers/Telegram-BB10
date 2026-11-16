@@ -1,4 +1,7 @@
 #include "AvatarRenderer.hpp"
+#include "EmojiText.hpp"
+#include <QResource>
+
 #include <QtTest>
 #include <QCoreApplication>
 #include <QTemporaryDir>
@@ -8,6 +11,19 @@
 class AvatarTests:public QObject{
     Q_OBJECT
 private slots:
+    void emojiSequencesAreMatchedWithoutLosingText(){
+        QVERIFY(QResource::registerResource("/source/assets/emoji.rcc"));
+        const QString assets=":/emoji";
+        QStringList sequences;sequences<<QString::fromUtf8("😀")<<QString::fromUtf8("👍🏽")<<QString::fromUtf8("🇷🇺")<<QString::fromUtf8("👨‍👩‍👧‍👦")<<QString::fromUtf8("🏳️‍🌈")<<QString::fromUtf8("1️⃣");
+        foreach(const QString &emoji,sequences){
+            const QVariantList parts=EmojiRenderer::parts(emoji,assets);QCOMPARE(parts.size(),1);
+            QCOMPARE(parts.first().toMap().value("text").toString(),emoji);
+            QImage image(parts.first().toMap().value("emoji").toString());QVERIFY(!image.isNull());
+        }
+        const QString text=QString::fromUtf8("Привет 😀 <b>literal</b>\nСледующая строка 👍🏽");
+        QString restored;foreach(const QVariant &part,EmojiRenderer::parts(text,assets))restored+=part.toMap().value("text").toString();
+        QCOMPARE(restored,text);QVERIFY(!EmojiRenderer::contains("Hello <img src=x> Привет 123",assets));
+    }
     void circleCropIsCachedPrivateAndOpaqueInside(){
         QTemporaryDir temp;const QString source=temp.path()+"/wide.png",folder=temp.path()+"/cache";
         QImage input(240,120,QImage::Format_RGB32);input.fill(QColor("#c25a48"));

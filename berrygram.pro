@@ -53,3 +53,9 @@ HEADERS += $$PWD/src/AvatarImages.hpp
 SOURCES += $$PWD/src/AvatarRenderer.cpp
 HEADERS += $$PWD/src/AvatarRenderer.hpp
 SOURCES += $$PWD/src/DemoPeople.cpp
+
+SOURCES += $$PWD/src/EmojiText.cpp
+HEADERS += $$PWD/src/EmojiText.hpp
+
+SOURCES += $$PWD/src/EmojiView.cpp
+HEADERS += $$PWD/src/EmojiView.hpp

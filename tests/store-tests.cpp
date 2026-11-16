@@ -500,7 +500,7 @@ private slots:
         peer.store.setSearchQuery(QString::fromUtf8("личНОЕ"));
         QCOMPARE(peer.store.chats().size(), 1);
         QCOMPARE(peer.store.chats().first().toMap().value("chatId").toString(), B);
-        QCOMPARE(peer.store.nextUnreadChat(), B);
+        QCOMPARE(peer.store.nextUnreadChat(), QString());
         peer.store.setSearchQuery(QString()); QCOMPARE(peer.store.chats().size(), 3);
         QVERIFY(peer.store.sendText(draft)); QTRY_VERIFY(!peer.store.sendBusy());
         QCOMPARE(peer.store.draftText(), QString());
@@ -517,14 +517,18 @@ private slots:
         QVERIFY(!control(peer, "stats").value("last_only_local").toBool());
     }
 
-    void unreadNavigationCyclesAndReadIsExplicit() {
+    void openingChatsMarksMessagesRead() {
         Peer peer; ready(peer); open(peer, A);
+        QTRY_COMPARE(peer.store.chat(A).value("unreadCount").toInt(), 0);
         QCOMPARE(peer.store.nextUnreadChat(), B);
-        open(peer, B); QCOMPARE(peer.store.nextUnreadChat(), C);
-        open(peer, C); QCOMPARE(peer.store.nextUnreadChat(), A);
-        QVERIFY(peer.store.markRead());
-        QTRY_COMPARE(peer.store.chats().last().toMap().value("unreadCount").toInt(), 0);
-        open(peer, B); QCOMPARE(peer.store.nextUnreadChat(), A);
+        open(peer, B);
+        QTRY_COMPARE(peer.store.chat(B).value("unreadCount").toInt(), 0);
+        QCOMPARE(peer.store.nextUnreadChat(), C);
+        open(peer, C);
+        QTRY_COMPARE(peer.store.chat(C).value("unreadCount").toInt(), 0);
+        QCOMPARE(peer.store.nextUnreadChat(), QString());
+        peer.store.closeChat();open(peer,A);
+        QTRY_COMPARE(peer.store.chat(A).value("unreadCount").toInt(), 0);
     }
 
     void mediaDownloadIsScopedToPrivateFiles() {

@@ -6,3 +6,6 @@ CONFIG -= app_bundle
 INCLUDEPATH += ../src
 SOURCES += avatar-tests.cpp ../src/AvatarRenderer.cpp
 HEADERS += ../src/AvatarRenderer.hpp
+
+SOURCES += ../src/EmojiText.cpp
+HEADERS += ../src/EmojiText.hpp
