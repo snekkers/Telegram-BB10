@@ -201,6 +201,13 @@ Page {
             horizontalAlignment: HorizontalAlignment.Center
         }
         Button {
+            objectName: "retryHistoryButton"
+            visible: chatPage.liveChat && _live.canLoadHistory && _live.errorText.length > 0
+            text: qsTr("Повторить загрузку")
+            horizontalAlignment: HorizontalAlignment.Center
+            onClicked: _live.loadMoreHistory()
+        }
+        Button {
             visible: chatPage.liveChat && _live.targetMessageId.length > 0
             text: qsTr("К последним сообщениям")
             horizontalAlignment: HorizontalAlignment.Fill
@@ -243,7 +250,7 @@ Page {
                 ListScrollStateHandler { id: historyScroll; objectName: "historyScroll"; onAtEndChanged: {if(chatPage.liveChat)_live.setFollowingLatest(atEnd);if(atEnd && navigation.top===chatPage)chatPage.pendingNewCount=0;} onScrollingChanged: if(!scrolling && chatPage.liveChat && navigation.top===chatPage && !_live.loadingHistory)_ui.scheduleViewState(chatPage) },
                 AutoPager {
                     objectName: "historyPager"
-                    enabled: chatPage.liveChat && navigation.top === chatPage && _live.canLoadHistory && _live.errorText.length === 0
+                    enabled: _live.foreground && chatPage.liveChat && navigation.top === chatPage && _live.canLoadHistory && _live.errorText.length === 0
                     atEdge: historyScroll.atBeginning
                     contentCount: chatPage.liveChat ? _live.messageCount : 0
                     onRequestMore: _live.loadMoreHistory()

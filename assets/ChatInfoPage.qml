@@ -50,7 +50,7 @@ Page {
                 ListScrollStateHandler {id: infoScroll},
                 AutoPager {
                     objectName: "infoPager"
-                    enabled: infoPage.liveChat && navigation.top===infoPage && infoPage.section>0 && _live.canLoadInfo && _live.infoError.length===0
+                    enabled: _live.foreground && infoPage.liveChat && navigation.top===infoPage && infoPage.section>0 && _live.canLoadInfo && _live.infoError.length===0
                     atEdge: infoScroll.atEnd || _live.infoCount===0
                     contentCount: _live.infoCount
                     onRequestMore: _live.loadMoreInfo()

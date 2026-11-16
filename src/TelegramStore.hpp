@@ -98,8 +98,8 @@ public:
     bool ready() const { return m_ready; }
     bool loadingChats() const { return m_loadingChats; }
     bool loadingHistory() const { return m_loadingHistory; }
-    bool canLoadChats() const { return m_ready && !m_loadingChats && !(m_archiveView ? m_archiveEnd : m_chatsEnd); }
-    bool canLoadHistory() const { return m_ready && !m_current.isEmpty() && !m_loadingHistory && !m_historyEnd; }
+    bool canLoadChats() const { return m_foreground && m_ready && !m_loadingChats && !(m_archiveView ? m_archiveEnd : m_chatsEnd); }
+    bool canLoadHistory() const { return m_foreground && m_ready && !m_current.isEmpty() && !m_loadingHistory && !m_historyEnd; }
     bool canSend() const;
     bool canSendMedia(const QString &kind) const;
     QString uploadDirectory() const;
@@ -134,7 +134,9 @@ public:
     void setSearchQuery(const QString &text);
     QString nextUnreadChat() const;
     bool markRead();
+    bool foreground() const { return m_foreground; }
     void setForeground(bool value);
+    void setNetwork(const QString &type, const QString &identity);
     void setFollowingLatest(bool value) { m_followingLatest=value; }
     bool downloadMedia(const QString &messageId);
     bool requestMediaProperties(const QString &messageId);
@@ -148,7 +150,7 @@ public:
     bool openChatAt(const QString &id, const QString &messageId);
     void closeChat();
     void loadMoreChats();
-    bool canLoadRecipientChats() const { return m_ready && !m_loadingChats && (!m_chatsEnd || !m_archiveEnd); }
+    bool canLoadRecipientChats() const { return m_foreground && m_ready && !m_loadingChats && (!m_chatsEnd || !m_archiveEnd); }
     void loadMoreRecipientChats();
     void loadMoreHistory();
     bool sendText(const QString &text, uint scheduledAt = 0);
@@ -184,6 +186,8 @@ private slots:
 private:
     QString submit(QVariantMap object, const QString &kind, const QString &chatId = QString());
     void reset();
+    void sendNetworkType(bool force = false);
+    void resumeHistoryRequests();
     void rebuildChats();
     void rebuildMessages();
     void requestScroll();
@@ -288,6 +292,7 @@ private:
     qlonglong m_lastReadSubmitted;
     unsigned m_generation;
     bool m_foreground;
+    QString m_networkType, m_networkIdentity, m_sentNetwork;
     bool m_ready, m_loadingChats, m_loadingHistory, m_chatsEnd, m_historyEnd, m_online;
     bool m_archiveView, m_archiveEnd, m_infoLoading, m_infoEnd;
     Q_DISABLE_COPY(TelegramStore)

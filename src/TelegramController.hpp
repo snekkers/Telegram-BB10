@@ -24,6 +24,7 @@ class TelegramController : public QObject {
     Q_PROPERTY(QString draftText READ draftText NOTIFY changed)
     Q_PROPERTY(int draftCursor READ draftCursor NOTIFY changed)
     Q_PROPERTY(bool ready READ ready NOTIFY changed)
+    Q_PROPERTY(bool foreground READ foreground NOTIFY changed)
     Q_PROPERTY(bool loadingChats READ loadingChats NOTIFY changed)
     Q_PROPERTY(bool loadingHistory READ loadingHistory NOTIFY changed)
     Q_PROPERTY(bool canLoadChats READ canLoadChats NOTIFY changed)
@@ -100,6 +101,7 @@ public:
     Q_INVOKABLE void saveViewState(const QString &id,int cursor){m_store->saveViewState(id,cursor);}
     Q_INVOKABLE bool openReply(const QString &chat,const QString &id){return m_store->openChatAt(chat.isEmpty() || chat=="0"?m_store->currentChatId():chat,id);}
     bool ready() const { return m_store->ready(); }
+    bool foreground() const { return m_store->foreground(); }
     bool loadingChats() const { return m_store->loadingChats(); }
     bool loadingHistory() const { return m_store->loadingHistory(); }
     bool canLoadChats() const { return m_store->canLoadChats(); }
@@ -197,7 +199,7 @@ public:
     Q_INVOKABLE bool muteUntil(const QDateTime &date){const qint64 seconds=qint64(date.toTime_t())-QDateTime::currentDateTime().toTime_t();return date.isValid() && seconds>0 && seconds<=366LL*86400 && m_store->muteFor(int(seconds));}
     Q_INVOKABLE bool cancelDownload(int id){return m_store->cancelDownload(id);}
     Q_INVOKABLE bool retryDownload(int id){return m_store->retryDownload(id);}
-    Q_INVOKABLE void configureAutoDownloads(bool wifi,bool mobile){m_autoWifi=wifi;m_autoMobile=mobile;m_store->setAutoDownloadPreferences(wifi,mobile);if(wifi || mobile)m_networkPoll.start(10000);else m_networkPoll.stop();networkChanged();}
+    Q_INVOKABLE void configureAutoDownloads(bool wifi,bool mobile){m_autoWifi=wifi;m_autoMobile=mobile;m_store->setAutoDownloadPreferences(wifi,mobile);if((wifi || mobile) && m_store->foreground())m_networkPoll.start(10000);else m_networkPoll.stop();networkChanged();}
     Q_INVOKABLE void setFollowingLatest(bool value) { m_store->setFollowingLatest(value); }
     Q_INVOKABLE bool downloadMedia(const QString &id) { return m_store->downloadMedia(id); }
     Q_INVOKABLE bool openMedia(const QString &id);
@@ -226,6 +228,7 @@ private slots:
     void updateScheduled();
     void updateDownloads();
     void networkChanged();
+    void foregroundChanged();
     void memoryFinished();
     void updateChats();
     void updateContacts();

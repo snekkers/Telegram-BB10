@@ -193,6 +193,11 @@ void TelegramStore::sessionChanged()
         option.insert("value", value);
         submit(option, "option");
         submit(method("getMe"), "me");
+        m_sentNetwork.clear();
+        sendNetworkType();
+        QVariantMap online = method("setOption"), state = method("optionValueBoolean");
+        state.insert("value", m_foreground); online.insert("name", "online"); online.insert("value", state);
+        submit(online, "online");
     }
     emit changed();
 }
@@ -215,7 +220,9 @@ QString TelegramStore::submit(QVariantMap object, const QString &kind, const QSt
     pending.insert("kind", kind);
     pending.insert("chatId", chatId);
     pending.insert("generation", m_generation);pending.insert("threadId",m_threadId);
-    pending.insert("deadline", m_clock.elapsed() + m_requestTimeoutMs);
+    const int timeout = (kind == "history" || kind == "chats" || kind == "network")
+        ? qMin(15000, m_requestTimeoutMs) : m_requestTimeoutMs;
+    pending.insert("deadline", m_clock.elapsed() + timeout);
     pending.insert("started",m_clock.elapsed());
     m_requests.insert(id, pending);
     return id;
@@ -580,7 +587,8 @@ void TelegramStore::refreshPinned(){
 
 void TelegramStore::history(bool initial)
 {
-    if (!canLoadHistory())
+    // Explicit opens may complete in the background; automatic paging may not.
+    if (!m_ready || m_current.isEmpty() || m_loadingHistory || m_historyEnd)
         return;
     initial = initial || m_historyCursor == 0;
     QVariantMap call = method(inComments()?"getMessageThreadHistory":"getChatHistory");
@@ -601,7 +609,7 @@ void TelegramStore::history(bool initial)
     emit changed();
 }
 
-void TelegramStore::loadMoreHistory() { history(false); }
+void TelegramStore::loadMoreHistory() { if (m_foreground) history(false); }
 
 QString TelegramStore::delivery(const QVariantMap &row) const
 {
@@ -1092,7 +1100,9 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
     const QString chat = pending.value("chatId").toString();
     const bool current = chat == m_current && pending.value("generation").toUInt() == m_generation;
     const bool error = type == "error";
-    if (kind == "me") {
+    if (kind == "network" && error) {
+        if (m_sentNetwork == pending.value("network")) m_sentNetwork.clear();
+    } else if (kind == "me") {
         if (!error && type == "user" && object.value("id").toLongLong() > 0) {
             m_account = idString(object.value("id"));
             emit avatarChanged(QString());
@@ -1464,9 +1474,63 @@ void TelegramStore::expireRequests()
     }
 }
 
-void TelegramStore::setForeground(bool value){
-    if(m_foreground==value)return;m_foreground=value;
-    m_peopleTimer.setInterval(value?1000:15000);m_expiry.setInterval(value?qMin(1000,m_requestTimeoutMs):qMin(5000,m_requestTimeoutMs));
-    if(m_ready){QVariantMap call=method("setOption"),option=method("optionValueBoolean");option.insert("value",value);call.insert("name","online");call.insert("value",option);submit(call,"online");}
-    if(value){peopleTick();markRead();}
+void TelegramStore::setNetwork(const QString &type, const QString &identity)
+{
+    if (type != "networkTypeNone" && type != "networkTypeWiFi" &&
+        type != "networkTypeMobile" && type != "networkTypeOther") return;
+    m_networkType = type;
+    m_networkIdentity = identity;
+    if (type == "networkTypeNone") m_online = false;
+    sendNetworkType();
+}
+
+void TelegramStore::sendNetworkType(bool force)
+{
+    if (!m_ready || m_networkType.isEmpty()) return;
+    const QString signature = m_networkType + ":" + m_networkIdentity;
+    if (!force && m_sentNetwork == signature) return;
+    QVariantMap call = method("setNetworkType");
+    call.insert("type", method(m_networkType.toLatin1().constData()));
+    const QString request = submit(call, "network");
+    if (!request.isEmpty()) { m_sentNetwork = signature; m_requests[request].insert("network", signature); }
+}
+
+void TelegramStore::resumeHistoryRequests()
+{
+    bool retryHistory = m_loadingHistory && !m_current.isEmpty();
+    bool retryChats = m_loadingChats, archive = m_archiveView;
+    QMap<QString, QVariantMap>::iterator it = m_requests.begin();
+    while (it != m_requests.end()) {
+        const QVariantMap pending = it.value();
+        const QString kind = pending.value("kind").toString();
+        if (kind == "history" || kind == "chats") {
+            if (kind == "history" && pending.value("chatId") == m_current &&
+                pending.value("generation").toUInt() == m_generation) retryHistory = true;
+            if (kind == "chats") { retryChats = true; archive = pending.value("archive").toBool(); }
+            // Retire only read requests. Late replies must not complete a new load.
+            it = m_requests.erase(it);
+        } else ++it;
+    }
+    if (retryHistory) { m_loadingHistory = false; history(m_messages.isEmpty()); }
+    if (retryChats) { m_loadingChats = false; loadChats(archive); }
+}
+
+void TelegramStore::setForeground(bool value)
+{
+    if (m_foreground == value) return;
+    m_foreground = value;
+    if (value) m_peopleTimer.start(1000);
+    else m_peopleTimer.stop();
+    m_expiry.setInterval(value ? qMin(1000, m_requestTimeoutMs) : qMin(5000, m_requestTimeoutMs));
+    if (m_ready) {
+        QVariantMap call = method("setOption"), option = method("optionValueBoolean");
+        option.insert("value", value); call.insert("name", "online"); call.insert("value", option);
+        submit(call, "online");
+        if (value) {
+            sendNetworkType(true);
+            resumeHistoryRequests();
+        } else flushDrafts();
+    }
+    if (value) { expireRequests(); peopleTick(); markRead(); }
+    emit changed();
 }

@@ -26,7 +26,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.16.0.21" in manifest
+            assert "Package-Version: 0.16.1.22" in manifest
             assert "Entry-Point-Icon: native/assets/icon.png" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
@@ -52,6 +52,7 @@ def main():
                 assert "libbbcascadespickers.so.1" in ui["needed"]
                 assert not {"libstdc++.so.6", "libgcc_s.so.1", "libtdjson.so"} & set(ui["needed"])
                 runtime = json.loads(archive.read("native/telegram/runtime-manifest.json"))
+                assert runtime.get("poll_patch_sha256") == hashlib.sha256((ROOT / "porting/tdlib-qnx-poll.patch").read_bytes()).hexdigest()
                 required = {"bin/berrygram-tdjson", "lib/libtdjson.so", "lib/libstdc++.so.6", "lib/libgcc_s.so.1"}
                 for item in runtime["files"]:
                     if item["path"] in required:

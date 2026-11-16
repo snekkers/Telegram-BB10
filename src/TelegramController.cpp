@@ -1,5 +1,6 @@
 #include "TelegramController.hpp"
 #include <bb/system/InvokeRequest>
+#include <bb/cascades/Application>
 #include <bb/system/FileTransferMode>
 #include <QUrl>
 #include <QFile>
@@ -21,6 +22,9 @@ TelegramController::TelegramController(TelegramStore *store, QObject *parent)
     m_scheduled=new bb::cascades::ArrayDataModel(this);m_downloads=new bb::cascades::ArrayDataModel(this);m_autoWifi=m_autoMobile=false;
     connect(store,SIGNAL(scheduledChanged()),this,SLOT(updateScheduled()));
     connect(store,SIGNAL(downloadsChanged()),this,SLOT(updateDownloads()));
+    connect(bb::cascades::Application::instance(),SIGNAL(fullscreen()),this,SLOT(foregroundChanged()));
+    connect(bb::cascades::Application::instance(),SIGNAL(thumbnail()),this,SLOT(foregroundChanged()));
+    connect(bb::cascades::Application::instance(),SIGNAL(invisible()),this,SLOT(foregroundChanged()));
     connect(&m_network,SIGNAL(onlineStateChanged(bool)),this,SLOT(networkChanged()));
     connect(&m_network,SIGNAL(configurationChanged(QNetworkConfiguration)),this,SLOT(networkChanged()));
     connect(&m_memoryProbe,SIGNAL(finished(int,QProcess::ExitStatus)),this,SLOT(memoryFinished()));
@@ -46,12 +50,17 @@ TelegramController::TelegramController(TelegramStore *store, QObject *parent)
 
 void TelegramController::updateScheduled(){reconcile(m_scheduled,m_store->scheduledMessages(),"messageId");emit changed();}
 void TelegramController::updateDownloads(){reconcile(m_downloads,m_store->downloads(),"fileId");emit changed();}
+void TelegramController::foregroundChanged(){
+    if(m_store->foreground()){if(m_autoWifi || m_autoMobile)m_networkPoll.start(10000);networkChanged();}
+    else m_networkPoll.stop();
+}
 void TelegramController::networkChanged(){
     const QNetworkConfiguration config=m_network.defaultConfiguration();const QNetworkConfiguration::BearerType type=config.bearerType();
     bool wifi=type==QNetworkConfiguration::BearerWLAN,known=config.isValid() && m_network.isOnline() && (wifi || type==QNetworkConfiguration::Bearer2G || type==QNetworkConfiguration::BearerCDMA2000 || type==QNetworkConfiguration::BearerWCDMA || type==QNetworkConfiguration::BearerHSPA || type==QNetworkConfiguration::BearerWiMAX);
     netstatus_interface_details_t *details=0;
     if(netstatus_get_interface_details(0,&details)==BPS_SUCCESS && details){const netstatus_interface_type_t kind=netstatus_interface_get_type(details);wifi=kind==NETSTATUS_INTERFACE_TYPE_WIFI;known=wifi || kind==NETSTATUS_INTERFACE_TYPE_CELLULAR;netstatus_free_interface_details(&details);}
     m_networkLabel=wifi?QString::fromUtf8("Wi-Fi"):known?QString::fromUtf8("Мобильная сеть"):QString::fromUtf8("Тип сети не определён");
+    m_store->setNetwork(!m_network.isOnline() && !known?"networkTypeNone":wifi?"networkTypeWiFi":known?"networkTypeMobile":"networkTypeOther",config.identifier());
     m_store->setAutoDownload(known && (wifi?m_autoWifi:m_autoMobile));m_store->autoDownload();
 }
 void TelegramController::refreshDiagnostics(){

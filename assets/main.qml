@@ -172,7 +172,7 @@ NavigationPane {
                         ListScrollStateHandler { id: chatScroll; objectName: "chatScroll" },
                         AutoPager {
                             objectName: "chatPager"
-                            enabled: navigation.live && navigation.top === chatsPage && _live.canLoadChats && _live.errorText.length === 0
+                            enabled: _live.foreground && navigation.live && navigation.top === chatsPage && _live.canLoadChats && _live.errorText.length === 0
                             atEdge: chatScroll.atEnd || _live.chatCount === 0
                             contentCount: _live.chatCount
                             onRequestMore: _live.loadMoreChats()

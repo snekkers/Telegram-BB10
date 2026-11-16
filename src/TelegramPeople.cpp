@@ -173,7 +173,7 @@ void TelegramStore::requestAvatar(const QString &key){
     m_avatarQueue.append(id);m_avatarQueued.insert(id);pumpAvatars();
 }
 void TelegramStore::pumpAvatars(){
-    while(m_ready && m_online && m_avatarActive.size()<3 && !m_avatarQueue.isEmpty() && m_requests.size()<48){
+    while(m_foreground && m_ready && m_online && m_avatarActive.size()<3 && !m_avatarQueue.isEmpty() && m_requests.size()<48){
         const int id=m_avatarQueue.takeFirst();m_avatarQueued.remove(id);
         QVariantMap call=method("downloadFile");call.insert("file_id",id);call.insert("priority",8);call.insert("offset",0);call.insert("limit",1024*1024);call.insert("synchronous",false);
         const QString request=submit(call,"avatar");if(request.isEmpty())return;

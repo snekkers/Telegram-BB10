@@ -78,7 +78,7 @@ Page {
                 ListScrollStateHandler { id: resultScroll; objectName: "resultScroll" },
                 AutoPager {
                     objectName: "resultPager"
-                    enabled: navigation.top === searchPage && _search.canLoadMore && _search.errorText.length === 0
+                    enabled: _live.foreground && navigation.top === searchPage && _search.canLoadMore && _search.errorText.length === 0
                     atEdge: resultScroll.atEnd
                     contentCount: _search.count
                     onRequestMore: _search.loadMore()

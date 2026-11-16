@@ -29,7 +29,7 @@ Page {
             attachedObjects: [
                 ListScrollStateHandler {id: recipientScroll},
                 AutoPager {
-                    enabled: forwardPage.liveChat && navigation.top===forwardPage && forwardPage.selection.state==="ready" && _live.canLoadRecipientChats && _live.errorText.length===0
+                    enabled: _live.foreground && forwardPage.liveChat && navigation.top===forwardPage && forwardPage.selection.state==="ready" && _live.canLoadRecipientChats && _live.errorText.length===0
                     atEdge: recipientScroll.atEnd || forwardPage.source.recipientCount===0
                     contentCount: forwardPage.source.recipientCount
                     onRequestMore: _live.loadMoreRecipientChats()

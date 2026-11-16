@@ -945,6 +945,80 @@ private slots:
         QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
     }
 
+    void backgroundPausesAutomaticHistoryAndResumesOnce() {
+        Peer peer; ready(peer); open(peer);
+        peer.store.setDraft("keep this draft");
+        peer.store.setForeground(false);
+        QVERIFY(!peer.store.canLoadHistory());
+        QVERIFY(!peer.store.canLoadChats());
+        QVERIFY(!peer.store.canLoadRecipientChats());
+        const int before = control(peer, "stats").value("history_calls").toList().size();
+        peer.store.loadMoreHistory(); peer.store.loadMoreChats();
+        QCOMPARE(control(peer, "stats").value("history_calls").toList().size(), before);
+        peer.store.setForeground(true);
+        QVERIFY(peer.store.canLoadHistory());
+        QCOMPARE(peer.store.draftText(), QString("keep this draft"));
+        QCOMPARE(control(peer, "stats").value("history_calls").toList().size(), before);
+    }
+
+    void foregroundRecoversLostHistoryWithoutRestartOrDuplicateSend() {
+        Peer peer; ready(peer);
+        QVERIFY(!control(peer, "holdHistory").isEmpty());
+        QVERIFY(peer.store.openChat(A)); QVERIFY(peer.store.loadingHistory());
+        peer.store.setForeground(false);
+        peer.store.setForeground(true);
+        QTRY_VERIFY(!peer.store.loadingHistory());
+        QCOMPARE(peer.store.messages().size(), 3);
+        QCOMPARE(control(peer, "stats").value("history_calls").toList().size(), 2);
+        QVERIFY(!control(peer, "releaseHistory").isEmpty());
+        QCOMPARE(peer.store.messages().size(), 3);
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0);
+        peer.store.setForeground(true);
+        QCOMPARE(control(peer, "stats").value("history_calls").toList().size(), 2);
+    }
+
+    void lateRetiredHistoryCannotFinishTheNewRequest() {
+        Peer peer; ready(peer); open(peer);
+        QVERIFY(!control(peer, "holdHistory").isEmpty()); peer.store.loadMoreHistory();
+        peer.store.setForeground(false);
+        QVERIFY(!control(peer, "holdHistory").isEmpty());
+        peer.store.setForeground(true); QVERIFY(peer.store.loadingHistory());
+        const QVariantList calls = control(peer, "stats").value("history_calls").toList();
+        QVariantMap stale = object("messages");
+        stale.insert("@extra", calls.at(calls.size()-2).toMap().value("@extra"));
+        stale.insert("messages", QVariantList());
+        QVERIFY(!control(peer, "emit", stale).isEmpty());
+        QVERIFY(peer.store.loadingHistory());
+        QVERIFY(!control(peer, "releaseHistory").isEmpty());
+        QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(!row(peer.store, "5").isEmpty());
+    }
+
+    void networkChangesAndResumeNotifyTdlibWithoutPollingReconnects() {
+        Peer peer; peer.store.setNetwork("networkTypeWiFi", "network-a"); ready(peer); open(peer);
+        QCOMPARE(control(peer, "stats").value("network_calls").toList().size(), 1);
+        for (int i=0; i<20; ++i) peer.store.setNetwork("networkTypeWiFi", "network-a");
+        QCOMPARE(control(peer, "stats").value("network_calls").toList().size(), 1);
+        peer.store.setNetwork("networkTypeWiFi", "network-b");
+        peer.store.setNetwork("networkTypeNone", "");
+        peer.store.setNetwork("networkTypeMobile", "mobile");
+        QCOMPARE(control(peer, "stats").value("network_calls").toList().size(), 4);
+        peer.store.setForeground(false); peer.store.setForeground(true);
+        QCOMPARE(control(peer, "stats").value("network_calls").toList().size(), 5);
+        peer.store.setForeground(true);
+        QCOMPARE(control(peer, "stats").value("network_calls").toList().size(), 5);
+    }
+
+    void resumeNeverRetriesUncertainMessageSends() {
+        Peer peer; ready(peer); open(peer);
+        QVERIFY(peer.store.sendText("timeout"));
+        peer.store.setForeground(false); peer.store.setForeground(true);
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
+        QVERIFY(!control(peer, "releaseSend").isEmpty());
+        QTRY_VERIFY(!row(peer.store, "3001").isEmpty());
+        QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
+    }
+
     void historyTimeoutAllowsRetry() {
         Peer peer(500); ready(peer);
         QVERIFY(!control(peer, "holdHistory").isEmpty());

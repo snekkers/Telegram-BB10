@@ -23,6 +23,8 @@ hold_contact=False
 loaded = False
 held_search = []
 search_calls = []
+network_calls = []
+history_calls = []
 hold_next_history = False
 held_history = []
 held_threads = []
@@ -156,6 +158,10 @@ for line in sys.stdin:
         assert query["api_id"] == 12345 and query["api_hash"] == "a" * 32
         send({"@type": "updateAuthorizationState", "authorization_state": {"@type": "authorizationStateReady"}})
         send({"@type": "updateConnectionState", "state": {"@type": "connectionStateReady"}})
+        reply(query)
+    elif kind == "setNetworkType":
+        assert query["type"]["@type"] in ("networkTypeNone", "networkTypeWiFi", "networkTypeMobile", "networkTypeOther")
+        network_calls.append(query["type"]["@type"])
         reply(query)
     elif kind == "setOption":
         assert query["name"] in ("use_quick_ack", "online")
@@ -334,6 +340,7 @@ for line in sys.stdin:
         for value in rows:value["topic_id"]={"@type":"messageTopicThread","message_thread_id":300}
         reply(query,"messages",messages=rows,total_count=2)
     elif kind == "getChatHistory":
+        history_calls.append(query)
         if hold_next_history:
             hold_next_history = False
             held_history.append(query)
@@ -519,7 +526,7 @@ for line in sys.stdin:
             held_sends.clear()
         else:
             assert op == "stats", op
-        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local, search_calls=search_calls, actions=actions, people_calls=people_calls)
+        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local, search_calls=search_calls, actions=actions, people_calls=people_calls, network_calls=network_calls, history_calls=history_calls)
     else:
         raise AssertionError(kind)
 

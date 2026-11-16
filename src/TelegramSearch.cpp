@@ -25,7 +25,8 @@ TelegramSearch::TelegramSearch(TelegramSession *session, TelegramStore *store, Q
 {
     m_debounce.setSingleShot(true);m_clock.start();
     connect(&m_debounce,SIGNAL(timeout()),this,SLOT(run()));
-    connect(&m_expiry,SIGNAL(timeout()),this,SLOT(expire()));m_expiry.start(qMin(1000,m_timeoutMs));
+    connect(&m_expiry,SIGNAL(timeout()),this,SLOT(expire()));
+    m_expiry.setInterval(qMin(1000,m_timeoutMs));
     connect(session,SIGNAL(eventReceived(QVariantMap)),this,SLOT(consume(QVariantMap)));
     connect(session,SIGNAL(changed()),this,SLOT(sessionChanged()));
     connect(store,SIGNAL(chatsChanged()),this,SLOT(rebuild()));
@@ -38,7 +39,7 @@ bool TelegramSearch::loading() const {
 bool TelegramSearch::canLoadMore() const { return m_active && m_mode==2 && !m_offset.isEmpty() && !loading(); }
 bool TelegramSearch::ready() const { return m_store->ready(); }
 void TelegramSearch::cancel() {
-    ++m_epoch;m_active=false;m_debounce.stop();m_ids.clear();m_messages.clear();m_rows.clear();m_offset.clear();m_error.clear();
+    ++m_epoch;m_active=false;m_debounce.stop();m_requests.clear();m_expiry.stop();m_ids.clear();m_messages.clear();m_rows.clear();m_offset.clear();m_error.clear();
     m_hydrated.clear();m_messageKeys.clear();emit changed();
 }
 void TelegramSearch::search(const QString &query,int mode,int filter) {
@@ -61,7 +62,7 @@ bool TelegramSearch::send(QVariantMap call,const QString &kind,const QString &ch
     const QString id=m_session->sendReady(call);
     if(id.isEmpty()) { m_error=QString::fromUtf8("Движок поиска недоступен.");return false; }
     QVariantMap pending;pending.insert("epoch",m_epoch);pending.insert("kind",kind);pending.insert("chatId",chatId);
-    pending.insert("deadline",m_clock.elapsed()+m_timeoutMs);m_requests.insert(id,pending);return true;
+    pending.insert("deadline",m_clock.elapsed()+m_timeoutMs);m_requests.insert(id,pending);if(!m_expiry.isActive())m_expiry.start();return true;
 }
 void TelegramSearch::run() {
     if(!m_active || !m_store->ready())return;
@@ -92,6 +93,7 @@ void TelegramSearch::consume(const QVariantMap &object) {
     const QString extra=object.value("@extra").toString();
     if(!m_requests.contains(extra))return;
     const QVariantMap pending=m_requests.take(extra);
+    if(m_requests.isEmpty())m_expiry.stop();
     if(pending.value("epoch").toUInt()!=m_epoch || !m_active)return;
     const QString type=object.value("@type").toString(),kind=pending.value("kind").toString();
     if(type=="error") {
@@ -140,5 +142,6 @@ void TelegramSearch::expire() {
         if(it.value().value("epoch").toUInt()==m_epoch) { expired=true;m_error=QString::fromUtf8("Поиск не ответил вовремя. Можно повторить."); }
         it=m_requests.erase(it);
     }
+    if(m_requests.isEmpty())m_expiry.stop();
     if(expired)emit changed();
 }
