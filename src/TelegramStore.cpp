@@ -216,6 +216,9 @@ void TelegramStore::rebuildChats()
             row.insert("order", i);
             const int unread = row.value("unreadCount").toInt();
             row.insert("unreadLabel", unread > 0 ? QString::number(unread) : QString());
+            const uint lastDate = row.value("lastDate").toUInt();
+            const QDateTime last = QDateTime::fromTime_t(lastDate);
+            row.insert("time", lastDate == 0 ? QString() : last.toString(last.date() == QDate::currentDate() ? "HH:mm" : "dd.MM"));
             rows.append(row);
         }
     }
@@ -950,6 +953,7 @@ void TelegramStore::consume(const QVariantMap &object)
         chat.insert("unreadCount", source.value("unread_count"));
         chat.insert("readOutbox", idString(source.value("last_read_outbox_message_id")));
         chat.insert("lastMessageId", idString(source.value("last_message").toMap().value("id")));
+        chat.insert("lastDate", source.value("last_message").toMap().value("date"));
         chat.insert("preview", source.value("last_message").toMap().isEmpty() ? QString() : messageText(source.value("last_message").toMap().value("content").toMap()).left(160));
         restoreChatDraft(id, source.value("draft_message"));
         setPositions(&chat, source.value("positions").toList());
@@ -976,6 +980,7 @@ void TelegramStore::consume(const QVariantMap &object)
         } else if (type == "updateChatLastMessage") {
             chat.insert("preview", object.value("last_message").toMap().isEmpty() ? QString() : messageText(object.value("last_message").toMap().value("content").toMap()).left(160));
             chat.insert("lastMessageId", idString(object.value("last_message").toMap().value("id")));
+            chat.insert("lastDate", object.value("last_message").toMap().value("date"));
             setPositions(&chat, object.value("positions").toList());
         } else if (type == "updateChatDraftMessage") {
             setPositions(&chat, object.value("positions").toList());

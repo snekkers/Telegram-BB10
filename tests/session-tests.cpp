@@ -25,6 +25,32 @@ private:
         QVERIFY(!session.configure("12345", QString(32, 'a')));
     }
 private slots:
+    void developmentTestConfigurationIsExplicitAndNotPersisted() {
+        QTemporaryDir directory;
+        QString library = directory.path() + "/libtdjson.so", data = directory.path() + "/private";
+        fixture(library, "test-api");
+        TelegramSession session(engine(), library, data);
+        QVERIFY(!session.useTestConfiguration()); // Never starts or configures itself.
+        session.start(); QTRY_COMPARE(session.phase(), QString("parameters"));
+#ifdef BERRYGRAM_DEVELOPMENT_TEST_API
+        QVERIFY(session.testConfigurationAvailable());
+        QVERIFY(session.useTestConfiguration());
+        QTRY_COMPARE(session.phase(), QString("phone"));
+        QVERIFY(!session.useTestConfiguration());
+        QVERIFY(!session.hasSavedConfiguration());
+        QVERIFY(!QFile::exists(data + "/api.json"));
+        session.stop(); QTRY_COMPARE(session.phase(), QString("stopped"));
+        session.start(); QTRY_COMPARE(session.phase(), QString("parameters"));
+        // Reopening never silently opts into restricted test credentials.
+        QVERIFY(!session.hasSavedConfiguration());
+#else
+        QVERIFY(!session.testConfigurationAvailable());
+        QVERIFY(!session.useTestConfiguration());
+        QCOMPARE(session.phase(), QString("parameters"));
+#endif
+        session.stop(); QTRY_COMPARE(session.phase(), QString("stopped"));
+    }
+
     void rememberedApiSurvivesRestartAndCanBeRemoved() {
         QTemporaryDir directory;
         QString library = directory.path() + "/libtdjson.so", data = directory.path() + "/private";

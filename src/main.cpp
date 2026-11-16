@@ -6,6 +6,9 @@
 #include <bb/cascades/AbstractPane>
 #include <bb/cascades/Application>
 #include <bb/cascades/QmlDocument>
+#include <bb/cascades/ThemeSupport>
+#include <bb/cascades/VisualStyle>
+#include <bb/cascades/Color>
 #include <QDebug>
 #include <QCoreApplication>
 #include <cstdlib>
@@ -13,6 +16,8 @@
 Q_DECL_EXPORT int main(int argc, char **argv)
 {
     bb::cascades::Application app(argc, argv);
+    app.themeSupport()->setVisualStyleAndPrimaryColor(bb::cascades::VisualStyle::Bright,
+        bb::cascades::Color::fromARGB(0xff5288b7), bb::cascades::Color::fromARGB(0xff42739d));
     ChatController controller;
     TelegramSession telegram;
     TelegramStore store(&telegram);

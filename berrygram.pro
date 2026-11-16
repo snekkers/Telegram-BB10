@@ -4,6 +4,7 @@ TARGET = berrygram
 
 CONFIG += qt warn_on cascades10
 CONFIG -= debug_and_release
+CONFIG(debug, debug|release): DEFINES += BERRYGRAM_DEVELOPMENT_TEST_API
 QT += core declarative
 
 INCLUDEPATH += $$PWD/src
@@ -25,6 +26,7 @@ OTHER_FILES += $$PWD/bar-descriptor.xml \
                $$PWD/assets/main.qml \
                $$PWD/assets/ChatPage.qml \
                $$PWD/assets/LoginPage.qml
+OTHER_FILES += $$files($$PWD/assets/*.qml) $$PWD/assets/Ui.js
 
 # The Cascades SDK chooses architecture-specific output directories for debug builds.
 # Build scripts stage the finished executable into bin/ for BAR packaging.

@@ -27,11 +27,15 @@ ChatController::ChatController(QObject *parent)
     m_chats->setGrouping(bb::cascades::ItemGrouping::None);
     m_messages->setGrouping(bb::cascades::ItemGrouping::None);
     addDemoChat("demo-saved", QString::fromUtf8("Избранное"),
-                QString::fromUtf8("Здесь можно проверить ввод с клавиатуры Classic."), 0);
+                QString::fromUtf8("Заметки, ссылки и всё важное"), 0);
+    addDemoChat("demo-anna", QString::fromUtf8("Анна"),
+                QString::fromUtf8("Встретимся завтра в 19:00?"), 1);
     addDemoChat("demo-bb10", "BlackBerry Classic",
-                QString::fromUtf8("Проверяем список, прокрутку и кнопку «Назад»."), 1);
-    addDemoChat("demo-project", QString::fromUtf8("Разработка"),
-                QString::fromUtf8("Следующий этап — подключение Telegram."), 2);
+                QString::fromUtf8("Пишу с настоящей клавиатуры"), 2);
+    addDemoChat("demo-project", QString::fromUtf8("Команда"),
+                QString::fromUtf8("Макеты готовы, можно смотреть"), 3);
+    addDemoChat("demo-design", QString::fromUtf8("Дизайн"),
+                QString::fromUtf8("Новый интерфейс для Classic"), 4);
     refreshChats();
 }
 
@@ -60,10 +64,14 @@ void ChatController::addDemoChat(const QString &id, const QString &title,
     row.insert("title", title);
     row.insert("preview", text);
     row.insert("order", order);
+    row.insert("time", QDateTime::currentDateTime().toString("HH:mm"));
+    row.insert("unreadLabel", order == 1 ? QString("2") : QString());
     m_chatRows.append(row);
 
     QVariantList history;
     history.append(message(title, text, false, 0));
+    history.append(message(QString::fromUtf8("Вы"), QString::fromUtf8("Да, отлично!"), true, 1));
+    history.append(message(title, QString::fromUtf8("Это демонстрационная переписка. Здесь можно проверить внешний вид и ввод с клавиатуры."), false, 2));
     m_history.insert(id, history);
 }
 

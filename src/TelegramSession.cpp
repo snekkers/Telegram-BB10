@@ -247,7 +247,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.6.1");
+    parameters.insert("application_version", "0.7.1");
     return authenticate(parameters);
 }
 
@@ -283,6 +283,27 @@ bool TelegramSession::useSavedConfiguration()
     QVariantMap configuration;
     if (!PrivateFile::read(QDir(m_dataDirectory).filePath("api.json"), &configuration)) return false;
     return configure(configuration.value("api_id").toString(), configuration.value("api_hash").toString());
+}
+
+bool TelegramSession::testConfigurationAvailable() const
+{
+#ifdef BERRYGRAM_DEVELOPMENT_TEST_API
+    return true;
+#else
+    return false;
+#endif
+}
+
+bool TelegramSession::useTestConfiguration()
+{
+#ifdef BERRYGRAM_DEVELOPMENT_TEST_API
+    // Official, restricted TEST ONLY credentials, not another developer's keys.
+    // https://github.com/telegramdesktop/tdesktop/blob/dev/docs/api_credentials.md
+    // Never persist them or enable this option in a release build.
+    return configure("17349", "344583e45741c457fe1862106095a5eb");
+#else
+    return false;
+#endif
 }
 
 bool TelegramSession::forgetConfiguration()

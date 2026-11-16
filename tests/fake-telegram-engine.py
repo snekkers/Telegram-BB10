@@ -45,8 +45,9 @@ for line in sys.stdin:
     if kind == "getOption":
         reply(query, "optionValueString", value="1.8.69 · Тест 😀")
     elif kind == "setTdlibParameters":
-        assert query["api_id"] == 12345
-        assert query["api_hash"] == "a" * 32
+        expected_id, expected_hash = (17349, "344583e45741c457fe1862106095a5eb") if scenario == "test-api" else (12345, "a" * 32)
+        assert query["api_id"] == expected_id
+        assert query["api_hash"] == expected_hash
         assert len(base64.b64decode(query["database_encryption_key"])) == 32
         assert Path(query["database_directory"]).parent == Path(query["files_directory"]).parent
         assert query["use_test_dc"] is False

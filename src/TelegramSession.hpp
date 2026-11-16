@@ -17,6 +17,7 @@ class TelegramSession : public QObject {
     Q_PROPERTY(bool busy READ busy NOTIFY changed)
     Q_PROPERTY(bool hasSavedConfiguration READ hasSavedConfiguration NOTIFY changed)
     Q_PROPERTY(QString savedApiId READ savedApiId NOTIFY changed)
+    Q_PROPERTY(bool testConfigurationAvailable READ testConfigurationAvailable CONSTANT)
 
 public:
     explicit TelegramSession(QObject *parent = 0);
@@ -31,6 +32,7 @@ public:
     bool busy() const { return m_busy; }
     bool hasSavedConfiguration() const;
     QString savedApiId() const;
+    bool testConfigurationAvailable() const;
     QString dataDirectory() const { return m_dataDirectory; }
 
     Q_INVOKABLE void start();
@@ -38,6 +40,7 @@ public:
     Q_INVOKABLE bool configure(const QString &apiId, const QString &apiHash);
     Q_INVOKABLE bool configureAndRemember(const QString &apiId, const QString &apiHash);
     Q_INVOKABLE bool useSavedConfiguration();
+    Q_INVOKABLE bool useTestConfiguration();
     Q_INVOKABLE bool forgetConfiguration();
     Q_INVOKABLE bool submit(const QString &value);
     // Application API; deliberately not invokable from QML.

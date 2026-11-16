@@ -3,6 +3,7 @@ TARGET = session-tests
 QT = core testlib
 CONFIG += console testcase c++11
 CONFIG -= app_bundle
+!contains(CONFIG, release_api_check): DEFINES += BERRYGRAM_DEVELOPMENT_TEST_API
 INCLUDEPATH += ../src
 SOURCES += session-tests.cpp ../src/TelegramSession.cpp ../src/JsonCodec.cpp ../src/TelegramStore.cpp
 HEADERS += ../src/TelegramSession.hpp ../src/JsonCodec.hpp ../src/TelegramStore.hpp
