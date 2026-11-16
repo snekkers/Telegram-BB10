@@ -17,3 +17,12 @@ sessions/
 api.json
 database.key
 *.binlog
+
+# Local dependencies and additional environment files
+node_modules/
+.env.*
+!.env.example
+
+# Separate applications outside the Telegram repository
+/spotify/
+/berrytunnel/

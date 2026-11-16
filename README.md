@@ -1,5 +1,7 @@
 # Telegram для BlackBerry Classic
 
+[История разработки и сохранённые версии](docs/development-history.md).
+
 Рабочий проект нативного Telegram-клиента для BB10: C++, Qt 4 и Cascades.
 Первое целевое устройство — BlackBerry Classic. Рабочее название можно поменять.
 
