@@ -6,6 +6,7 @@
 #include <QString>
 #include <QVariant>
 #include <QTimer>
+#include <QSet>
 #include <bb/cascades/DataModel>
 #include <bb/cascades/GroupDataModel>
 #include <bb/cascades/ArrayDataModel>
@@ -46,6 +47,9 @@ class ChatController : public QObject
     Q_PROPERTY(QString currentChatStatus READ currentChatStatus NOTIFY currentChatChanged)
     Q_PROPERTY(bool currentStatusActive READ currentStatusActive NOTIFY currentChatChanged)
     Q_PROPERTY(QString currentAvatarKey READ currentAvatarKey NOTIFY currentChatChanged)
+    Q_PROPERTY(int selectionCount READ selectionCount NOTIFY currentChatChanged)
+    Q_PROPERTY(QVariantMap selectionState READ selectionState NOTIFY currentChatChanged)
+    Q_PROPERTY(QString selectedText READ selectedText NOTIFY currentChatChanged)
     Q_PROPERTY(bool composerVisible READ composerVisible NOTIFY currentChatChanged)
 
 public:
@@ -73,6 +77,13 @@ public:
     int recipientCount() const { return m_recipients->childCount(QVariantList()); }
     bool canLoadRecipientChats() const { return false; }
     Q_INVOKABLE void loadMoreRecipientChats() {}
+    int selectionCount() const{return m_selected.size();}
+    QVariantMap selectionState() const{return m_selectionState;}
+    QString selectedText() const;
+    Q_INVOKABLE bool toggleSelected(const QString &id);
+    Q_INVOKABLE void clearSelection(){m_selected.clear();m_selectionState.clear();refreshMessages();emit currentChatChanged();}
+    Q_INVOKABLE bool prepareSelection(const QString &action);
+    Q_INVOKABLE bool deleteSelected(bool revoke);
     Q_INVOKABLE bool beginMessageAction(const QString &id,const QString &action);
     Q_INVOKABLE void cancelComposer() { m_context.clear();emit currentChatChanged(); }
     Q_INVOKABLE bool forwardTo(const QString &id);
@@ -125,7 +136,8 @@ private:
     bb::cascades::GroupDataModel *m_chats;
     bb::cascades::ArrayDataModel *m_messages, *m_infoRows;
     bb::cascades::GroupDataModel *m_recipients;
-    QVariantMap m_context,m_forward;
+    QVariantMap m_context,m_forward,m_selectionState;
+    QSet<QString> m_selected;
     QMap<QString,bool> m_muted;
     bb::cascades::ArrayDataModel *m_contacts;
     QTimer m_typingTimer;

@@ -12,8 +12,17 @@
 #include <bb/cascades/LayoutUpdateHandler>
 #include <QFile>
 #include <QTimer>
+#include <QCache>
 #include <QtGui/QColor>
 using namespace bb::cascades;
+namespace {
+Image emojiImage(const QString &path){
+    static QCache<QString,Image> cache(64);
+    if(cache.contains(path))return *cache.object(path);
+    QFile file(path);if(!file.open(QIODevice::ReadOnly))return Image();
+    Image image(file.readAll());cache.insert(path,new Image(image));return image;
+}
+}
 EmojiView::EmojiView(Container *parent):CustomControl(parent),m_root(new Container),m_ink("#202b33"),m_width(500),m_pixels(28),m_pending(false){
     m_root->setLayout(new AbsoluteLayout);setRoot(m_root);
 }
@@ -36,13 +45,12 @@ void EmojiView::rebuild(){
     m_pending=false;
     foreach(const Part &part,m_parts)if(part.control)disconnect(part.control,0,this,0);
     m_parts.clear();m_root->removeAll();
-    if(!EmojiRenderer::contains(m_text,":/emoji")){word(m_text);arrange();emit changed();return;}
     const QVariantList tokens=EmojiRenderer::parts(m_text,":/emoji");
+    if(tokens.size()==1 && !tokens.first().toMap().contains("emoji")){word(m_text);arrange();emit changed();return;}
     foreach(const QVariant &value,tokens){
         const QVariantMap token=value.toMap();
         if(token.contains("emoji")){
-            QFile file(token.value("emoji").toString());if(!file.open(QIODevice::ReadOnly)){word(token.value("text").toString());continue;}
-            ImageView *image=new ImageView;image->setImage(Image(file.readAll()));
+            ImageView *image=new ImageView;image->setImage(emojiImage(token.value("emoji").toString()));
             image->setPreferredSize(m_pixels,m_pixels);image->setMinWidth(m_pixels);image->setMaxWidth(m_pixels);image->setMinHeight(m_pixels);image->setMaxHeight(m_pixels);
             image->setLayoutProperties(new AbsoluteLayoutProperties);m_root->add(image);
             Part part;part.control=image;part.size=QSizeF(m_pixels,m_pixels);m_parts.append(part);

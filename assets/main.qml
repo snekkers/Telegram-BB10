@@ -24,6 +24,13 @@ NavigationPane {
         var page=forwardPageDefinition.createObject();if(page){page.liveChat=isLive;navigation.push(page);}
     }
     onCreationCompleted: applyCategory()
+    function openEmoji(target) {
+        var page=emojiPageDefinition.createObject();if(page){page.picked.connect(function(symbol){target.insertEmoji(symbol);});navigation.push(page);}
+    }
+    function openPhoto(id,isLive) {
+        if(!_media.openPhoto(id,isLive))return;
+        var page=photoPageDefinition.createObject();if(page)navigation.push(page);else _media.closePhoto();
+    }
     function openSearch() {
         if (!live && !demo) return;
         _search.begin(!live);
@@ -56,7 +63,7 @@ NavigationPane {
         actionBarVisibility: ChromeVisibility.Hidden
         titleBar: AppHeader {
             caption: navigation.live || navigation.demo ? (navigation.archiveView?qsTr("Архив"):qsTr("Чаты")) : "Berrygram"
-            detail: navigation.live ? _live.connectionStatus : navigation.demo ? qsTr("Демо · без подключения") : qsTr("Telegram для BlackBerry Classic")
+            detail: navigation.live ? (_notifications.unread>0?qsTr("Непрочитанных: ")+_notifications.unread+" · "+_live.connectionStatus:_live.connectionStatus) : navigation.demo ? qsTr("Демо · без подключения") : qsTr("Telegram для BlackBerry Classic")
             compact: navigation.live || navigation.demo
             composeVisible: navigation.live || navigation.demo
             onComposeRequested: navigation.openContacts()
@@ -70,6 +77,7 @@ NavigationPane {
             Shortcut { key: "u"; enabled: navigation.live; onTriggered: navigation.openChatById(_live.nextUnreadChat()) }
         ]
         actions: [
+            ActionItem {title: qsTr("Очистить кеш фото");onTriggered: _media.clearCache()},
             ActionItem {objectName: "newMessageAction";title: qsTr("Новое сообщение");imageSource: "asset:///icons/edit-white.png";enabled: navigation.live || navigation.demo;onTriggered: navigation.openContacts()},
             ActionItem { objectName: "globalSearchAction"; title: qsTr("Поиск"); imageSource: "asset:///icons/search-white.png"; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
             ActionItem { objectName: "archiveAction"; title: navigation.archiveView?qsTr("К чатам"):qsTr("Архив"); imageSource: "asset:///icons/archive-white.png"; enabled: navigation.live || navigation.demo; onTriggered: navigation.setArchive(!navigation.archiveView) },
@@ -151,7 +159,7 @@ NavigationPane {
             }
         }
     }
-    attachedObjects: [ ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" }, ComponentDefinition { id: infoPageDefinition; source: "ChatInfoPage.qml" }, ComponentDefinition { id: forwardPageDefinition; source: "ForwardPage.qml" }, ComponentDefinition {id: contactsPageDefinition;source: "ContactsPage.qml"} ]
+    attachedObjects: [ ComponentDefinition {id: emojiPageDefinition;source: "EmojiPage.qml"}, ComponentDefinition {id: photoPageDefinition;source: "PhotoPage.qml"}, ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" }, ComponentDefinition { id: infoPageDefinition; source: "ChatInfoPage.qml" }, ComponentDefinition { id: forwardPageDefinition; source: "ForwardPage.qml" }, ComponentDefinition {id: contactsPageDefinition;source: "ContactsPage.qml"} ]
     onPushTransitionEnded: {
         if ((page.objectName === "chatPage" || page.objectName === "searchPage" || page.objectName === "contactsPage") && page.focusComposer !== undefined) page.focusComposer();
     }
@@ -160,6 +168,8 @@ NavigationPane {
         if (page.objectName === "searchPage") _search.cancel();
         if (page.objectName === "contactsPage") (page.livePage?_live:_chat).cancelContactOpen();
         if (page.objectName === "forwardPage") (page.liveChat?_live:_chat).setRecipientQuery("");
+        if(page.objectName==="emojiPage"){_emoji.release();if(navigation.top && navigation.top.objectName==="chatPage")navigation.top.focusComposer();}
+        if(page.objectName==="photoPage")_media.closePhoto();
         page.destroy();
     }
 }

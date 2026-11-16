@@ -25,7 +25,11 @@
 #include <bb/cascades/TextEditor>
 #include <bb/cascades/TitleBar>
 #include <bb/cascades/Window>
+#include <bb/cascades/ScrollView>
+#include <bb/cascades/DropDown>
 #include <bb/system/Clipboard>
+#include <bb/platform/Notification>
+#include <bps/navigator.h>
 #include <QDir>
 #include <QFile>
 #include <QtGui/QImage>
@@ -131,6 +135,12 @@ void UiTools::checkRequest()
             if(page){navigation->push(page);ok=true;}
         } else if(action=="back" && navigation->count()>1) {
             navigation->pop();ok=true;
+        } else if(action=="notification-test" && navigation->property("demo").toBool()) {
+            bb::platform::Notification notice("berrygram-test");notice.setTitle("Berrygram");notice.setBody(QString::fromUtf8("Проверка уведомлений · демо"));
+            const int error=notice.notify();const int badge=navigator_set_badge(NAVIGATOR_BADGE_SPLAT);
+            m_result.insert("notification_error",error);m_result.insert("badge_error",badge);ok=error==0 && badge==0;
+        } else if(action=="notification-clear"){
+            bb::platform::Notification::deleteFromInbox("berrygram-test");navigator_clear_badge();ok=true;
         } else if(action=="capture") {
             ok=true;
         } else if(action=="disable-checks") {
@@ -138,7 +148,27 @@ void UiTools::checkRequest()
         } else if(navigation->top() && navigation->count()>1) {
             Page *page=navigation->top();
             TextArea *field=page->findChild<TextArea*>("messageField");
-            if(action=="scroll-top" || action=="scroll-bottom") {
+            if(action=="emoji-picker"){
+                ImageButton *button=page->findChild<ImageButton*>("emojiButton");ok=button && QMetaObject::invokeMethod(button,"clicked");
+            }else if(action=="emoji-pick"){
+                ListView *list=page->findChild<ListView*>("emojiList");QVariantList index;index<<request.value("index",0).toInt();ok=list && QMetaObject::invokeMethod(list,"triggered",Q_ARG(QVariantList,index));
+            }else if(action=="emoji-category"){
+                DropDown *category=page->findChild<DropDown*>("emojiCategory");if(category){category->setSelectedIndex(request.value("index").toInt());ok=true;}
+            }else if(action=="select-message"){
+                ok=m_demo->toggleSelected(request.value("message_id").toString());
+            }else if(action=="selected-delete" || action=="selected-forward"){
+                ok=m_demo->prepareSelection(action=="selected-delete"?"delete":"forward");
+            }else if(action=="selected-confirm-delete"){
+                Button *button=page->findChild<Button*>("confirmDeleteButton");ok=button && QMetaObject::invokeMethod(button,"clicked");
+            }else if(action=="selected-cancel"){
+                m_demo->clearSelection();ok=true;
+            }else if(action=="photo-demo"){
+                ok=QMetaObject::invokeMethod(navigation,"openPhoto",Q_ARG(QVariant,QVariant("demo-photo-0")),Q_ARG(QVariant,QVariant(false)));
+            }else if(action=="photo-next" || action=="photo-previous" || action=="photo-save"){
+                Button *button=page->findChild<Button*>(action=="photo-next"?"nextPhotoButton":action=="photo-previous"?"previousPhotoButton":"savePhotoButton");ok=button && button->isEnabled() && QMetaObject::invokeMethod(button,"clicked");
+            }else if(action=="photo-zoom"){
+                ScrollView *scroll=page->findChild<ScrollView*>("photoScroll");if(scroll){scroll->zoomToPoint(0,0,2,ScrollAnimation::None);ok=true;}
+            }else if(action=="scroll-top" || action=="scroll-bottom") {
                 ListView *list=page->findChild<ListView*>(page->objectName()=="searchPage"?"searchResults":"messageList");
                 if(list){list->scrollToPosition(action=="scroll-top"?ScrollPosition::Beginning:ScrollPosition::End,ScrollAnimation::None);ok=true;}
             } else if(page->objectName()=="contactsPage"){
@@ -225,6 +255,7 @@ void UiTools::finishCheck()
     NavigationPane *navigation=qobject_cast<NavigationPane*>(m_root.data());
     const bool demoPage=navigation && navigation->top() && !m_live->ready() &&
         navigation->property("demo").toBool() && (navigation->count()==1 ||
+        navigation->top()->objectName()=="emojiPage" || navigation->top()->objectName()=="photoPage" ||
         navigation->top()->objectName()=="searchPage" ||
         navigation->top()->objectName()=="contactsPage" ||
         navigation->top()->objectName()=="chatInfoPage" || navigation->top()->objectName()=="forwardPage" ||
@@ -251,6 +282,9 @@ void UiTools::finishCheck()
         }
         QObject *send=page->findChild<QObject*>("sendButton");
         if(send)m_result.insert("send_enabled",send->property("enabled"));
+        m_result.insert("selection_count",m_demo->selectionCount());m_result.insert("selection_state",m_demo->selectionState());
+        ListView *emojiList=page->findChild<ListView*>("emojiList");if(emojiList)m_result.insert("emoji_count",emojiList->dataModel()->childCount(QVariantList()));
+        if(page->objectName()=="photoPage"){m_result.insert("photo_position",page->property("photoPosition"));m_result.insert("photo_loaded",page->property("photoLoaded"));}
         m_result.insert("message_count",m_demo->messages()->childCount(QVariantList()));
         m_result.insert("chat_count",m_demo->chatCount());
         QVariantList chatRows;

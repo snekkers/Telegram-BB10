@@ -62,6 +62,9 @@ class TelegramController : public QObject {
     Q_PROPERTY(QString currentChatStatus READ currentChatStatus NOTIFY changed)
     Q_PROPERTY(bool currentStatusActive READ currentStatusActive NOTIFY changed)
     Q_PROPERTY(QString currentAvatarKey READ currentAvatarKey NOTIFY changed)
+    Q_PROPERTY(int selectionCount READ selectionCount NOTIFY changed)
+    Q_PROPERTY(QVariantMap selectionState READ selectionState NOTIFY changed)
+    Q_PROPERTY(QString selectedText READ selectedText NOTIFY changed)
     Q_PROPERTY(bool composerVisible READ composerVisible NOTIFY changed)
 public:
     explicit TelegramController(TelegramStore *store, QObject *parent = 0);
@@ -108,6 +111,13 @@ public:
     int recipientCount() const { return m_recipients->size(); }
     bool canLoadRecipientChats() const { return m_store->canLoadRecipientChats(); }
     Q_INVOKABLE void loadMoreRecipientChats() { m_store->loadMoreRecipientChats(); }
+    int selectionCount() const{return m_store->selectionCount();}
+    QVariantMap selectionState() const{return m_store->selectionState();}
+    QString selectedText() const{return m_store->selectedText();}
+    Q_INVOKABLE bool toggleSelected(const QString &id){return m_store->toggleSelected(id);}
+    Q_INVOKABLE void clearSelection(){m_store->clearSelection();}
+    Q_INVOKABLE bool prepareSelection(const QString &action){return m_store->prepareSelection(action);}
+    Q_INVOKABLE bool deleteSelected(bool revoke){return m_store->deleteSelected(revoke);}
     Q_INVOKABLE bool beginMessageAction(const QString &id,const QString &action);
     Q_INVOKABLE void cancelComposer() { m_store->cancelComposer(); }
     Q_INVOKABLE bool forwardTo(const QString &id) { return m_store->forwardTo(id); }

@@ -3,6 +3,7 @@
 #include "TelegramSearch.hpp"
 #include "AutoPager.hpp"
 #include "Presence.hpp"
+#include "NotificationPolicy.hpp"
 #include "LocalOutbox.hpp"
 #include "PrivateFile.hpp"
 #include "MessagePresentation.hpp"
@@ -76,6 +77,7 @@ private:
         QVERIFY(!control(peer, "emit", event).isEmpty());
     }
 
+    void addOutgoing(Peer &peer){QVariantMap event=object("updateNewMessage"),message=object("message");message.insert("chat_id",A.toLongLong());message.insert("id",50);message.insert("is_outgoing",true);message.insert("content",content("original"));event.insert("message",message);update(peer,event);}
     QString payload(const QString &data, const QString &name = "note.txt") {
         QDir().mkpath(data + "/uploads/copy");
         const QString path = data + "/uploads/copy/" + name;
@@ -173,6 +175,46 @@ private slots:
         QCOMPARE(row(peer.store,"50").value("text").toString(),QString("edited text"));QVERIFY(row(peer.store,"50").value("edited").toBool());
         QCOMPARE(peer.store.draftText(),QString("keep me"));QVERIFY(peer.store.composerContext().isEmpty());
         QVERIFY(peer.store.beginMessageAction("30","edit"));QTest::qWait(80);QVERIFY(peer.store.composerContext().isEmpty());QVERIFY(!peer.store.errorText().isEmpty());
+    }
+    void selectionRequiresConfirmationAndPreservesOtherMessages(){
+        Peer peer;ready(peer);open(peer);addOutgoing(peer);QVERIFY(peer.store.toggleSelected("30"));QVERIFY(peer.store.toggleSelected("50"));QCOMPARE(peer.store.selectionCount(),2);
+        QVERIFY(!peer.store.deleteSelected(false));QVERIFY(peer.store.prepareSelection("delete"));
+        QTRY_COMPARE(peer.store.selectionState().value("state").toString(),QString("ready"));
+        QVERIFY(!peer.store.selectionState().value("all").toBool());QVERIFY(!peer.store.deleteSelected(true));
+        QVariantList actions=control(peer,"stats").value("actions").toList();foreach(const QVariant &value,actions)QVERIFY(value.toMap().value("@type")!="deleteMessages");
+        QVERIFY(peer.store.deleteSelected(false));QTRY_COMPARE(peer.store.selectionCount(),0);
+        QVERIFY(row(peer.store,"30").isEmpty());QVERIFY(row(peer.store,"50").isEmpty());QVERIFY(!row(peer.store,"20").isEmpty());
+    }
+    void deletionForEveryoneRequiresExplicitChoiceWhenLocalDeleteIsForbidden(){
+        Peer peer;ready(peer);open(peer);addOutgoing(peer);
+        QVariantMap fixture=object("fixtureOnlyAllDelete");QVERIFY(!peer.session.sendReady(fixture).isEmpty());
+        QVERIFY(peer.store.toggleSelected("50"));QVERIFY(peer.store.prepareSelection("delete"));QTRY_COMPARE(peer.store.selectionState().value("state").toString(),QString("ready"));
+        QVERIFY(!peer.store.selectionState().value("self").toBool());QVERIFY(peer.store.selectionState().value("all").toBool());QVERIFY(!peer.store.deleteSelected(false));
+        QVERIFY(peer.store.deleteSelected(true));QTRY_COMPARE(peer.store.selectionCount(),0);
+    }
+    void selectionCancelsStaleChecksAndClearsOnChatChange(){
+        Peer peer;ready(peer);open(peer);addOutgoing(peer);QVERIFY(peer.store.toggleSelected("50"));QVERIFY(peer.store.prepareSelection("delete"));peer.store.clearSelection();QTest::qWait(70);
+        QVERIFY(peer.store.selectionState().isEmpty());QVERIFY(!peer.store.deleteSelected(true));
+        QVERIFY(peer.store.toggleSelected("30"));open(peer,B);QCOMPARE(peer.store.selectionCount(),0);
+    }
+    void selectedForwardHasOneJournalRecordPerMessage(){
+        Peer peer;ready(peer);open(peer);addOutgoing(peer);QVERIFY(peer.store.toggleSelected("50"));QVERIFY(peer.store.toggleSelected("30"));QVERIFY(peer.store.prepareSelection("forward"));
+        QTRY_COMPARE(peer.store.forwardSelection().value("state").toString(),QString("ready"));
+        QCOMPARE(peer.store.forwardSelection().value("messageIds").toStringList(),QStringList()<<"30"<<"50");
+        QVERIFY(peer.store.forwardTo(B));QTRY_COMPARE(peer.store.forwardSelection().value("state").toString(),QString("sent"));
+        LocalOutbox journal(peer.session.dataDirectory());QVERIFY(journal.open());int sent=0;foreach(const QVariant &value,journal.entries("9007199254740990"))if(value.toMap().value("type")=="forward" && value.toMap().value("state")=="sent")++sent;QCOMPARE(sent,2);
+    }
+    void backgroundChatDoesNotAcknowledgeUnreadMessages(){
+        Peer peer;ready(peer);peer.store.setForeground(false);open(peer);QCOMPARE(peer.store.chat(A).value("unreadCount").toInt(),3);QVERIFY(!peer.store.markRead());peer.store.setForeground(true);QTRY_COMPARE(peer.store.chat(A).value("unreadCount").toInt(),0);
+    }
+    void notificationPolicyDeduplicatesHonorsPreviewAndBadge(){
+        NotificationPolicy policy;QVariantMap count=object("updateUnreadMessageCount");count.insert("chat_list",object("chatListMain"));count.insert("unread_unmuted_count",3);policy.consume(count,true,A);QCOMPARE(policy.unread,3);
+        count.insert("chat_list",object("chatListArchive"));count.insert("unread_unmuted_count",2);policy.consume(count,true,A);QCOMPARE(policy.unread,5);
+        QVariantMap type=object("notificationTypeNewMessage"),message=object("message");message.insert("content",content("private text"));type.insert("message",message);type.insert("show_preview",false);
+        QVariantMap notice;notice.insert("id",1);notice.insert("type",type);QVariantMap event=object("updateNotificationGroup");event.insert("notification_group_id",7);event.insert("chat_id",A.toLongLong());event.insert("added_notifications",QVariantList()<<notice);
+        QVariantList actions=policy.consume(event,false,A);QCOMPARE(actions.size(),1);QVERIFY(!actions.first().toMap().value("body").toString().contains("private text"));QVERIFY(policy.consume(event,false,A).isEmpty());
+        policy.reset();QVERIFY(policy.consume(event,true,A).isEmpty());policy.reset();type.insert("show_preview",true);notice.insert("type",type);event.insert("added_notifications",QVariantList()<<notice);QCOMPARE(policy.consume(event,true,B).first().toMap().value("body").toString(),QString("private text"));
+        event.remove("added_notifications");event.insert("removed_notification_ids",QVariantList()<<1);QVERIFY(policy.consume(event,false,A).first().toMap().value("remove").toBool());
     }
     void forwardIsExplicitJournaledAndKeepsOriginalReference() {
         Peer peer;ready(peer);open(peer);

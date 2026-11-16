@@ -59,3 +59,13 @@ HEADERS += $$PWD/src/EmojiText.hpp
 
 SOURCES += $$PWD/src/EmojiView.cpp
 HEADERS += $$PWD/src/EmojiView.hpp
+
+SOURCES += $$PWD/src/NotificationCenter.cpp
+HEADERS += $$PWD/src/NotificationCenter.hpp $$PWD/src/NotificationPolicy.hpp
+LIBS += -lbbplatform
+
+SOURCES += $$PWD/src/MediaController.cpp $$PWD/src/PhotoCache.cpp
+HEADERS += $$PWD/src/MediaController.hpp $$PWD/src/PhotoCache.hpp
+
+SOURCES += $$PWD/src/EmojiCatalog.cpp
+HEADERS += $$PWD/src/EmojiCatalog.hpp

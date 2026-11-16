@@ -1,5 +1,6 @@
 #include "AvatarRenderer.hpp"
 #include "EmojiText.hpp"
+#include "PhotoCache.hpp"
 #include <QResource>
 
 #include <QtTest>
@@ -23,6 +24,11 @@ private slots:
         const QString text=QString::fromUtf8("Привет 😀 <b>literal</b>\nСледующая строка 👍🏽");
         QString restored;foreach(const QVariant &part,EmojiRenderer::parts(text,assets))restored+=part.toMap().value("text").toString();
         QCOMPARE(restored,text);QVERIFY(!EmojiRenderer::contains("Hello <img src=x> Привет 123",assets));
+    }
+    void photosDecodeToBoundedPrivateThumbnails(){
+        QTemporaryDir temp;QImage original(2400,1600,QImage::Format_RGB32);original.fill(Qt::blue);const QString source=temp.path()+"/original.jpg";QVERIFY(original.save(source));
+        const QString url=PhotoCache::scaled(source,temp.path()+"/cache",320);QVERIFY(!url.isEmpty());QImage thumbnail(QUrl(url).toLocalFile());QCOMPARE(thumbnail.width(),320);QVERIFY(thumbnail.height()<=320);QCOMPARE(PhotoCache::scaled(source,temp.path()+"/cache",320),url);
+        QVERIFY(QFile::link(source,temp.path()+"/link.jpg"));QVERIFY(PhotoCache::scaled(temp.path()+"/link.jpg",temp.path()+"/cache",320).isEmpty());
     }
     void circleCropIsCachedPrivateAndOpaqueInside(){
         QTemporaryDir temp;const QString source=temp.path()+"/wide.png",folder=temp.path()+"/cache";

@@ -7,6 +7,9 @@
 #include "AutoPager.hpp"
 #include "AvatarImages.hpp"
 #include "EmojiView.hpp"
+#include "NotificationCenter.hpp"
+#include "MediaController.hpp"
+#include "EmojiCatalog.hpp"
 #include <QResource>
 
 #include <bb/cascades/AbstractPane>
@@ -15,6 +18,7 @@
 #include <bb/cascades/ThemeSupport>
 #include <bb/cascades/VisualStyle>
 #include <bb/cascades/Color>
+#include <bb/cascades/SceneCover>
 #include <QDebug>
 #include <QCoreApplication>
 #include <QtDeclarative/qdeclarative.h>
@@ -32,6 +36,9 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     ChatController controller;
     TelegramSession telegram;
     TelegramStore store(&telegram);
+    EmojiCatalog emoji;
+    MediaController media(&store,&controller);
+    NotificationCenter notifications(&telegram,&store);
     AvatarProvider avatars(&store);
     TelegramController telegramController(&store);
     TelegramSearch telegramSearch(&telegram,&store);
@@ -41,12 +48,20 @@ Q_DECL_EXPORT int main(int argc, char **argv)
 
     bb::cascades::QmlDocument *document =
         bb::cascades::QmlDocument::create("asset:///main.qml").parent(&app);
+    document->setContextProperty("_emoji", &emoji);
+    document->setContextProperty("_media", &media);
+    document->setContextProperty("_notifications", &notifications);
     document->setContextProperty("_chat", &controller);
     document->setContextProperty("_telegram", &telegram);
     document->setContextProperty("_live", &telegramController);
     document->setContextProperty("_ui", &uiTools);
     document->setContextProperty("_avatars",&avatars);
     document->setContextProperty("_search", &searchController);
+
+    bb::cascades::QmlDocument *coverDocument=bb::cascades::QmlDocument::create("asset:///ActiveFrame.qml").parent(&app);
+    coverDocument->setContextProperty("_notifications",&notifications);
+    bb::cascades::SceneCover *cover=coverDocument->createRootObject<bb::cascades::SceneCover>();
+    if(cover)app.setCover(cover);
 
     if (document->hasErrors()) {
         qCritical() << "Cannot load assets/main.qml";

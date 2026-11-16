@@ -9,3 +9,6 @@ HEADERS += ../src/AvatarRenderer.hpp
 
 SOURCES += ../src/EmojiText.cpp
 HEADERS += ../src/EmojiText.hpp
+
+SOURCES += ../src/PhotoCache.cpp
+HEADERS += ../src/PhotoCache.hpp

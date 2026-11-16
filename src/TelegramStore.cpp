@@ -85,7 +85,7 @@ QString draftValue(const QVariant &draft)
 
 TelegramStore::TelegramStore(TelegramSession *session, QObject *parent, int requestTimeoutMs)
     : QObject(parent), m_session(session), m_local(session->dataDirectory()), m_nextCleanup(0), m_requestTimeoutMs(qMax(100, requestTimeoutMs)), m_contactsLoading(false),m_openingContact(false),m_contactSection(0),m_contactSerial(0),m_nextPresenceRefresh(0), m_infoSection(0), m_memberOffset(0), m_actionSerial(0), m_infoSerial(0), m_historyCursor(0), m_generation(0),
-      m_ready(false), m_loadingChats(false), m_loadingHistory(false),
+      m_foreground(true), m_ready(false), m_loadingChats(false), m_loadingHistory(false),
       m_chatsEnd(false), m_historyEnd(false), m_online(true), m_archiveView(false), m_archiveEnd(false), m_infoLoading(false), m_infoEnd(true)
 {
     connect(session, SIGNAL(changed()), this, SLOT(sessionChanged()));
@@ -115,6 +115,7 @@ void TelegramStore::reset()
 {
     suspendLocalSends(); m_account.clear(); m_localMessages.clear();
     ++m_generation;
+    m_selected.clear();m_selectionState.clear();
     m_chats.clear(); m_users.clear(); m_requests.clear(); m_outbox.clear();
     m_messages.clear(); m_overlays.clear(); m_historyTouched.clear(); m_removed.clear();
     m_failedDrafts.clear(); m_recoveredTexts.clear(); m_current.clear(); m_error.clear();
@@ -417,9 +418,7 @@ void TelegramStore::recordSendResult(const QVariantMap &message, const QString &
     const QString state = outcome == "failed" || sending == "messageSendingStateFailed" ? "failed" :
         outcome == "succeeded" || sending.isEmpty() ? "sent" : "pending";
     if (!m_local.transition(recordId, state, idString(message.value("id")))) m_error = m_local.error();
-    if(m_forward.value("recordId")==recordId) {
-        m_forward.insert("state",state);m_forward.insert("status",state=="sent"?ru("Сообщение переслано."):state=="failed"?ru("Пересылка отклонена."):ru("Передано Telegram. Ожидание подтверждения."));
-    }
+    if(m_forward.value("recordIds").toStringList().contains(recordId) || m_forward.value("recordId")==recordId)updateForwardStatus();
     if (state == "pending") m_localMessages.insert(idString(message.value("chat_id")) + ":" + idString(message.value("id")), recordId);
 }
 
@@ -496,6 +495,7 @@ void TelegramStore::closeChat()
     }
     ++m_generation;
     m_current.clear();
+    m_selected.clear();m_selectionState.clear();
     m_composerContext.clear();m_forward.clear();++m_actionSerial;++m_infoSerial;
     m_infoLoading=false;m_infoEnd=true;m_infoRows.clear();m_infoError.clear();emit infoChanged();
     m_targetMessage.clear();
@@ -720,6 +720,7 @@ void TelegramStore::rebuildMessages()
             author = m_chats.value(row.value("senderChatId").toString()).value("title").toString();
         if(row.value("replyQuote").toString().isEmpty() && row.value("replyMessageId").toLongLong()>0)
             row.insert("replyQuote",m_messages.value(row.value("replyMessageId").toLongLong()).value("text",ru("Ответ на сообщение")).toString().left(240));
+        row.insert("selected",m_selected.contains(it.key()));
         row.insert("author", author);
         row.insert("delivery", delivery(row));
         row.insert("searchTarget", row.value("messageId").toString() == m_targetMessage && !m_targetMessage.isEmpty());
@@ -882,7 +883,7 @@ QString TelegramStore::nextUnreadChat() const
 
 bool TelegramStore::markRead()
 {
-    if (!m_ready || m_current.isEmpty() || m_messages.isEmpty()) return false;
+    if (!m_foreground || !m_ready || m_current.isEmpty() || m_messages.isEmpty()) return false;
     qlonglong latest = 0;
     for (QMap<qlonglong, QVariantMap>::const_iterator it = m_messages.constBegin(); it != m_messages.constEnd(); ++it)
         if (it.value().value("sendingState").toString().isEmpty() && it.key() > latest) latest = it.key();
@@ -1201,6 +1202,7 @@ void TelegramStore::consume(const QVariantMap &object)
             for (int i = 0; i < ids.size(); ++i) {
                 qlonglong removed = ids.at(i).toLongLong();
                 m_messages.remove(removed);
+                m_selected.remove(removed);
                 m_removed.insert(removed);
             }
         }
@@ -1223,6 +1225,7 @@ void TelegramStore::expireRequests()
         if (kind == "send" || kind=="edit" || kind=="forward") {
             pending.insert("expired", true); // Keep correlation for a late answer; never resend automatically.
             m_local.transition(pending.value("recordId").toString(), "uncertain");
+            foreach(const QString &record,pending.value("recordIds").toStringList())m_local.transition(record,"uncertain");
             if (m_outbox.contains(it.key())) m_outbox[it.key()].insert("delivery", ru("Результат отправки неизвестен"));
             if (pending.value("chatId") == m_current) m_error = ru("Нет ответа об отправке. Проверьте историю перед повтором.");
             if(kind=="forward") {m_forward.insert("state","uncertain");m_forward.insert("status",ru("Нет ответа. Проверьте чат получателя перед повтором."));}
@@ -1236,6 +1239,7 @@ void TelegramStore::expireRequests()
             if(kind.startsWith("info") && pending.value("infoSerial").toUInt()==m_infoSerial) {m_infoLoading=false;m_infoError=ru("Сведения не ответили вовремя. Можно повторить.");emit infoChanged();}
             if(kind=="contacts"){m_contactsLoading=false;m_contactsError=ru("Контакты не ответили вовремя. Можно повторить.");emit contactsChanged();}
             if(kind=="contact-open" && pending.value("contactSerial").toUInt()==m_contactSerial){m_openingContact=false;m_contactsError=ru("Не удалось открыть диалог. Повторите.");emit contactsChanged();}
+            if((kind=="selection-check" || kind=="delete") && current){++m_actionSerial;m_selectionState.clear();m_error=ru("Нет ответа о действии. Проверьте чат перед повтором.");}
             if(kind=="message-action" && current)m_error=ru("Не удалось проверить действия с сообщением. Повторите.");
             it = m_requests.erase(it);
         }
@@ -1244,4 +1248,11 @@ void TelegramStore::expireRequests()
         rebuildMessages();
         emit changed();
     }
+}
+
+void TelegramStore::setForeground(bool value){
+    if(m_foreground==value)return;m_foreground=value;
+    m_peopleTimer.setInterval(value?1000:15000);m_expiry.setInterval(value?qMin(1000,m_requestTimeoutMs):qMin(5000,m_requestTimeoutMs));
+    if(m_ready){QVariantMap call=method("setOption"),option=method("optionValueBoolean");option.insert("value",value);call.insert("name","online");call.insert("value",option);submit(call,"online");}
+    if(value){peopleTick();markRead();}
 }

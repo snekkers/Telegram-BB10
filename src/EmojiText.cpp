@@ -6,13 +6,14 @@
 #include <QStringList>
 
 namespace {
+QSet<QString> prefixes;
 struct Match { QString name; int length; Match():length(0){} };
 const QMap<QString,QString> &names(const QString &folder) {
     static QString cachedFolder;
     static QMap<QString,QString> result;
     if(cachedFolder!=folder) {
-        cachedFolder=folder;result.clear();
-        foreach(const QString &name,QDir(folder).entryList(QStringList()<<"*.png",QDir::Files)){QString key=name.left(name.size()-4);key.replace("-fe0f","");result.insert(key,name.left(name.size()-4));}
+        cachedFolder=folder;result.clear();prefixes.clear();
+        foreach(const QString &name,QDir(folder).entryList(QStringList()<<"*.png",QDir::Files)){QString key=name.left(name.size()-4);key.replace("-fe0f","");result.insert(key,name.left(name.size()-4));QString prefix;foreach(const QString &piece,key.split('-')){if(!prefix.isEmpty())prefix+='-';prefix+=piece;prefixes.insert(prefix);}}
     }
     return result;
 }
@@ -25,6 +26,7 @@ Match match(const QString &text,int start,const QMap<QString,QString> &available
             cp=0x10000+((cp-0xd800)<<10)+(text.at(i++).unicode()-0xdc00);
         if(cp!=0xfe0f) {if(!key.isEmpty())key+='-';key+=QString::number(cp,16);}
         if(available.contains(key)){best.name=available.value(key);best.length=i-start;}
+        if(!prefixes.contains(key))break;
         if(points==0 && cp<0x2000 && cp!='#' && cp!='*' && (cp<'0' || cp>'9') && cp!=0xa9 && cp!=0xae)break;
     }
     return best;

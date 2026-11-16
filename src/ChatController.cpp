@@ -117,7 +117,7 @@ void ChatController::refreshMessages()
         m_currentChatId == "demo-project" || m_currentChatId == "demo-bb10",
         "2", m_currentChatId == "demo-anna");
     for (int i = 0; i < rows.size(); ++i) {
-        QVariantMap row=rows.at(i).toMap();row.insert("searchTarget",row.value("messageId").toString()==m_targetMessage && !m_targetMessage.isEmpty());
+        QVariantMap row=rows.at(i).toMap();row.insert("selected",m_selected.contains(row.value("messageId").toString()));row.insert("searchTarget",row.value("messageId").toString()==m_targetMessage && !m_targetMessage.isEmpty());
         if(i>=m_messages->size())m_messages->append(QVariant(row));
         else if(m_messages->value(i).toMap().value("messageId")!=row.value("messageId"))m_messages->insert(i,QVariant(row));
         else if(m_messages->value(i).toMap()!=row)m_messages->replace(i,QVariant(row));
@@ -136,6 +136,7 @@ bool ChatController::openChatAt(const QString &chatId,const QString &messageId)
         return false;
     }
 
+    m_selected.clear();m_selectionState.clear();
     m_context.clear();m_forward.clear();m_typingTimer.stop();m_demoStatus.clear();
     m_currentChatId = chatId;
     m_targetMessage = messageId;
@@ -182,6 +183,7 @@ bool ChatController::sendDemoMessage(const QString &text)
     QVariantMap row = message(QString::fromUtf8("Вы · локально"), body,
                                    true, history.size());
     if(m_context.value("mode")=="reply"){row.insert("replyQuote",m_context.value("preview"));row.insert("replyMessageId",m_context.value("messageId"));}
+    int nextId=1;foreach(const QVariant &value,history)nextId=qMax(nextId,value.toMap().value("messageId").toString().toInt()+1);row.insert("messageId",QString::number(nextId));
     m_context.clear();history.append(row);
     refreshMessages();
 

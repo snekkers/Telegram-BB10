@@ -8,6 +8,9 @@ Page {
     actionBarVisibility: ChromeVisibility.Hidden
     property bool liveChat: false
     property bool composerVisible: liveChat?_live.composerVisible:_chat.composerVisible
+    property variant source: liveChat?_live:_chat
+    property variant selectionState: source.selectionState
+    onSelectionStateChanged: if(revokeDelete && selectionState.state!=="ready")revokeDelete.checked=false
     property bool sceneReady: false
     property variant composerContext: liveChat?_live.composerContext:_chat.composerContext
     property string composerKey: ""
@@ -30,7 +33,7 @@ Page {
     onIncomingSerialChanged: {
         if(!sceneReady)return;
         var source=liveChat?_live:_chat;
-        if(navigation.top===chatPage && historyScroll.atEnd && pendingNewCount===0 && source.targetMessageId.length===0)messageList.scrollToPosition(ScrollPosition.End,ScrollAnimation.None);
+        if(navigation.top===chatPage && historyScroll.atEnd && pendingNewCount===0 && source.targetMessageId.length===0){messageList.scrollToPosition(ScrollPosition.End,ScrollAnimation.None);if(liveChat)_live.markRead();}
         else pendingNewCount+=1;
     }
     onForwardSerialChanged: {
@@ -45,6 +48,7 @@ Page {
         }
     }
     shortcuts: [
+        Shortcut {key: "Alt+e";enabled: chatPage.composerVisible && navigation.top===chatPage;onTriggered: navigation.openEmoji(chatPage)},
         SystemShortcut {
             type: SystemShortcuts.JumpToBottom
             onTriggered: messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.Default)
@@ -63,6 +67,7 @@ Page {
         if (liveChat && messageList) scrollToTarget();
     }
 
+    function insertEmoji(symbol){messageField.editor.insertPlainText(symbol);messageField.requestFocus();}
     function submitDraft() {
         if (messageField.text.trim().length === 0 && (!liveChat || _live.attachmentName.length === 0)) return;
         if (liveChat && !_live.canSendSelected) return;
@@ -109,6 +114,7 @@ Page {
         onMenuRequested: _ui.openMenu(chatPage)
     }
     actions: [
+        ActionItem {objectName: "demoPhotoAction";title: qsTr("Просмотр фото · демо");enabled: !chatPage.liveChat;onTriggered: navigation.openPhoto("demo-photo-0",false)},
         ActionItem { objectName: "chatInfoAction"; title: qsTr("Сведения о чате"); imageSource: "asset:///icons/info-white.png"; onTriggered: navigation.openChatInfo(chatPage.liveChat) },
         ActionItem { title: qsTr("Документ"); imageSource: "asset:///icons/attach-white.png"; enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("document") },
         ActionItem { title: qsTr("Фото"); imageSource: "asset:///icons/photo-white.png"; enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("photo") },
@@ -195,6 +201,8 @@ Page {
             ]
             function downloadMedia(id) { _live.downloadMedia(id); }
             function openMedia(id) { _live.openMedia(id); }
+            function openPhoto(id){navigation.openPhoto(id,chatPage.liveChat);}
+            function selectMessage(id,remove){var source=chatPage.liveChat?_live:_chat;if(remove)source.clearSelection();source.toggleSelected(id);if(remove)source.prepareSelection("delete");}
             function copyText(text) { _ui.copyText(text); }
             function messageAction(id,action) { (chatPage.liveChat?_live:_chat).beginMessageAction(id,action); }
             dataModel: chatPage.liveChat ? _live.messages : _chat.messages
@@ -206,6 +214,7 @@ Page {
                 return "message";
             }
 
+            onTriggered: if(chatPage.source.selectionCount>0)chatPage.source.toggleSelected(dataModel.data(indexPath).messageId)
             listItemComponents: [
                 ListItemComponent {
                     type: "message"
@@ -218,7 +227,7 @@ Page {
                         minWidth: preferredWidth
                         maxWidth: preferredWidth
                         horizontalAlignment: HorizontalAlignment.Fill
-                        background: ListItemData.searchTarget === true ? Color.create("#fff0bb") : Color.Transparent
+                        background: ListItemData.selected===true ? Color.create("#b8d6e9") : ListItemData.searchTarget === true ? Color.create("#fff0bb") : Color.Transparent
                         Label {
                             visible: ListItemData.searchTarget === true
                             text: qsTr("Найденное сообщение")
@@ -263,6 +272,8 @@ Page {
                             contextActions: [
                                 ActionSet {
                                     title: qsTr("Сообщение")
+                                    ActionItem {title: ListItemData.selected?qsTr("Снять выделение"):qsTr("Выделить");onTriggered: messageItem.ListItem.view.selectMessage(ListItemData.messageId,false)}
+                                    ActionItem {title: qsTr("Удалить");onTriggered: messageItem.ListItem.view.selectMessage(ListItemData.messageId,true)}
                             ActionItem { objectName: "replyAction-"+(ListItemData.messageId || ""); title: qsTr("Ответить"); imageSource: "asset:///icons/reply-white.png"; enabled: messageItem.ListItem.view.canReply && !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"reply") }
                             ActionItem { objectName: "forwardAction-"+(ListItemData.messageId || ""); title: qsTr("Переслать"); imageSource: "asset:///icons/forward-white.png"; enabled: !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"forward") }
                             ActionItem { objectName: "editAction-"+(ListItemData.messageId || ""); title: qsTr("Изменить"); imageSource: "asset:///icons/edit-white.png"; enabled: !messageItem.ListItem.view.editingContext && ListItemData.outgoing===true && ListItemData.textMessage===true; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"edit") }
@@ -301,17 +312,19 @@ Page {
                             }
                             ImageView {
                                 visible: ListItemData.media !== undefined && ListItemData.media.kind === "photo" && ListItemData.media.localUrl.length > 0
-                                imageSource: visible ? ListItemData.media.localUrl : ""
+                                imageSource: visible ? _media.thumbnail(ListItemData.media.localUrl) : ""
                                 preferredWidth: ui.du(42); preferredHeight: ui.du(32)
                                 scalingMethod: ScalingMethod.AspectFit
                                 accessibility.name: qsTr("Фото из сообщения")
+                                gestureHandlers: [TapHandler {onTapped: messageItem.ListItem.view.openPhoto(ListItemData.messageId)}]
                             }
                             Button {
                                 visible: ListItemData.media !== undefined && ListItemData.media.fileId !== undefined
                                 enabled: visible && !ListItemData.media.downloading
                                 text: visible && ListItemData.media.path.length > 0 ? qsTr("Открыть вложение") : qsTr("Скачать вложение")
                                 onClicked: {
-                                    if (ListItemData.media.path.length > 0) messageItem.ListItem.view.openMedia(ListItemData.messageId);
+                                    if(ListItemData.media.kind==="photo")messageItem.ListItem.view.openPhoto(ListItemData.messageId);
+                                    else if (ListItemData.media.path.length > 0) messageItem.ListItem.view.openMedia(ListItemData.messageId);
                                     else messageItem.ListItem.view.downloadMedia(ListItemData.messageId);
                                 }
                             }
@@ -383,6 +396,26 @@ Page {
         }
 
         Container {
+            visible: chatPage.source.selectionCount>0
+            background: Color.create("#e5edf2")
+            leftPadding: ui.du(1);rightPadding: ui.du(1)
+            Label {text: qsTr("Выбрано: ")+chatPage.source.selectionCount+" / 50";textStyle.base: SystemDefaults.TextStyles.SmallText}
+            Container {
+                visible: chatPage.selectionState.state!=="ready" || chatPage.selectionState.action!=="delete"
+                layout: StackLayout {orientation: LayoutOrientation.LeftToRight}
+                Button {objectName: "copySelectedButton";text: qsTr("Копия");onClicked: _ui.copyText(chatPage.source.selectedText)}
+                Button {objectName: "forwardSelectedButton";text: qsTr("Переслать");enabled: chatPage.selectionState.state!=="checking" && chatPage.selectionState.state!=="deleting";onClicked: chatPage.source.prepareSelection("forward")}
+                Button {objectName: "deleteSelectedButton";text: qsTr("Удалить");enabled: chatPage.selectionState.state!=="checking" && chatPage.selectionState.state!=="deleting";onClicked: chatPage.source.prepareSelection("delete")}
+            }
+            Container {
+                visible: chatPage.selectionState.state==="ready" && chatPage.selectionState.action==="delete"
+                Label {text: chatPage.selectionState.self===false?qsTr("Эти сообщения можно удалить только у всех."):qsTr("Удалить выбранные сообщения?");textStyle.base: SystemDefaults.TextStyles.SmallText}
+                CheckBox {id: revokeDelete;objectName: "deleteForEveryone";text: qsTr("Также у собеседников");checked: false;visible: chatPage.selectionState.all===true}
+                Button {objectName: "confirmDeleteButton";text: qsTr("Подтвердить удаление");enabled: revokeDelete.checked?chatPage.selectionState.all===true:chatPage.selectionState.self===true;onClicked: {chatPage.source.deleteSelected(revokeDelete.checked && chatPage.selectionState.all===true);revokeDelete.checked=false;}}
+            }
+            Button {objectName: "cancelSelectionButton";text: qsTr("Отмена выделения");enabled: chatPage.selectionState.state!=="deleting";onClicked: chatPage.source.clearSelection()}
+        }
+        Container {
             id: composer
             objectName: "composer"
             visible: chatPage.composerVisible
@@ -401,6 +434,16 @@ Page {
                     onLayoutFrameChanged: { composer.measuredTop = layoutFrame.y; composer.measuredHeight = layoutFrame.height; }
                 }
             ]
+            ImageButton {
+                objectName: "emojiButton"
+                defaultImageSource: "asset:///icons/emoji-button.png"
+                pressedImageSource: "asset:///icons/emoji-button.png"
+                preferredWidth: ui.du(6);minWidth: preferredWidth;maxWidth: preferredWidth
+                preferredHeight: ui.du(6.8)
+                verticalAlignment: VerticalAlignment.Bottom
+                accessibility.name: qsTr("Выбрать emoji")
+                onClicked: navigation.openEmoji(chatPage)
+            }
             ImageButton {
                 objectName: "attachmentButton"
                 preferredWidth: ui.du(6.8); preferredHeight: ui.du(6.8)

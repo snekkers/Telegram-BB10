@@ -93,20 +93,52 @@ bool TelegramStore::editText(const QString &text){
     m_requests[request].insert("recordId",record);m_requests[request].insert("messageId",target);m_requests[request].insert("actionSerial",m_actionSerial);
     m_error.clear();emit changed();return true;
 }
+void TelegramStore::updateForwardStatus(){
+    QStringList records=m_forward.value("recordIds").toStringList();if(records.isEmpty())records<<m_forward.value("recordId").toString();
+    QString state="sent";
+    foreach(const QString &record,records){const QString s=m_local.entry(record).value("state").toString();if(s=="failed"){state="failed";break;}if(s=="uncertain")state="uncertain";else if(state!="uncertain" && s!="sent")state="pending";}
+    m_forward.insert("state",state);m_forward.insert("status",state=="sent"?ru("Пересылка завершена."):state=="failed"?ru("Часть сообщений не переслана. Проверьте чат получателя."):state=="uncertain"?ru("Проверьте результат в чате получателя."):ru("Ожидание подтверждения Telegram."));
+}
 bool TelegramStore::forwardTo(const QString &id){
     if(!m_ready || m_forward.value("state")!="ready" || m_forward.value("sourceChatId")!=m_current)return false;
     const QVariantMap chat=m_chats.value(id);
     if(!chat.value("canSend").toBool() || chat.value("topics").toBool() || chat.value("type")=="chatTypeSecret")return false;
-    QVariantMap intent;intent.insert("type","forward");intent.insert("sourceMessageId",m_forward.value("messageId"));intent.insert("sourceChatId",m_current);
-    const QString record=m_local.prepare(m_account,id,intent);
-    if(record.isEmpty() || !m_local.transition(record,"submitting")){m_error=m_local.error();emit changed();return false;}
-    QVariantMap call=method("forwardMessages");call.insert("chat_id",number(id));call.insert("from_chat_id",number(m_current));call.insert("topic_id",QVariant());
-    call.insert("message_ids",QVariantList()<<number(m_forward.value("messageId").toString()));
+    QStringList ids=m_forward.value("messageIds").toStringList();if(ids.isEmpty())ids<<m_forward.value("messageId").toString();
+    QStringList records;QVariantList numbers;
+    foreach(const QString &source,ids){
+        QVariantMap intent;intent.insert("type","forward");intent.insert("sourceMessageId",source);intent.insert("sourceChatId",m_current);
+        const QString record=m_local.prepare(m_account,id,intent);if(record.isEmpty() || !m_local.transition(record,"submitting")){foreach(const QString &prepared,records)m_local.transition(prepared,"failed");m_error=m_local.error();emit changed();return false;}
+        records<<record;numbers<<number(source);
+    }
+    QVariantMap call=method("forwardMessages");call.insert("chat_id",number(id));call.insert("from_chat_id",number(m_current));call.insert("topic_id",QVariant());call.insert("message_ids",numbers);
     QVariantMap options=method("messageSendOptions");options.insert("paid_message_star_count",0);call.insert("options",options);call.insert("send_copy",false);call.insert("remove_caption",false);
     const QString request=submit(call,"forward",id);
-    if(request.isEmpty()){m_local.transition(record,"uncertain");return false;}
-    m_requests[request].insert("recordId",record);
-    m_forward.insert("recordId",record);m_forward.insert("state","sending");m_forward.insert("status",ru("Пересылка…"));emit changed();return true;
+    if(request.isEmpty()){foreach(const QString &record,records)m_local.transition(record,"uncertain");return false;}
+    m_requests[request].insert("recordId",records.first());m_requests[request].insert("recordIds",records);
+    m_forward.insert("recordId",records.first());m_forward.insert("recordIds",records);m_forward.insert("state","sending");m_forward.insert("status",ru("Пересылка…"));emit changed();return true;
+}
+QString TelegramStore::selectedText() const{
+    QStringList text;for(QMap<qlonglong,QVariantMap>::const_iterator it=m_messages.constBegin();it!=m_messages.constEnd();++it)if(m_selected.contains(it.key()))text<<it.value().value("text").toString();return text.join("\n\n");
+}
+bool TelegramStore::toggleSelected(const QString &id){
+    const qlonglong key=id.toLongLong();const QVariantMap row=m_messages.value(key);
+    if(row.isEmpty() || !row.value("sendingState").toString().isEmpty() || m_selectionState.value("state")=="deleting")return false;
+    if(m_selected.contains(key))m_selected.remove(key);else{if(m_selected.size()>=50)return false;m_selected.insert(key);}
+    ++m_actionSerial;m_selectionState.clear();rebuildMessages();emit changed();return true;
+}
+void TelegramStore::clearSelection(){if(m_selectionState.value("state")=="deleting")return;++m_actionSerial;m_selected.clear();m_selectionState.clear();rebuildMessages();emit changed();}
+bool TelegramStore::prepareSelection(const QString &action){
+    if(!m_ready || m_current.isEmpty() || m_selected.isEmpty() || (action!="delete" && action!="forward") || m_selectionState.value("state")=="checking" || m_selectionState.value("state")=="deleting")return false;
+    ++m_actionSerial;m_selectionState.clear();m_selectionState.insert("state","checking");m_selectionState.insert("action",action);m_selectionState.insert("remaining",m_selected.size());m_selectionState.insert("all",true);m_selectionState.insert("self",true);
+    foreach(const qlonglong id,m_selected){QVariantMap call=method("getMessageProperties");call.insert("chat_id",number(m_current));call.insert("message_id",QVariant::fromValue(id));const QString request=submit(call,"selection-check",m_current);if(request.isEmpty()){++m_actionSerial;m_selectionState.clear();emit changed();return false;}m_requests[request].insert("actionSerial",m_actionSerial);}
+    emit changed();return true;
+}
+bool TelegramStore::deleteSelected(bool revoke){
+    if(!m_ready || m_selected.isEmpty() || m_selectionState.value("state")!="ready" || m_selectionState.value("action")!="delete" || !m_selectionState.value(revoke?"all":"self").toBool())return false;
+    QVariantList ids;foreach(const qlonglong id,m_selected)ids<<QVariant::fromValue(id);
+    QVariantMap call=method("deleteMessages");call.insert("chat_id",number(m_current));call.insert("message_ids",ids);call.insert("revoke",revoke);
+    const QString request=submit(call,"delete",m_current);if(request.isEmpty())return false;
+    m_requests[request].insert("ids",ids);m_selectionState.insert("state","deleting");emit changed();return true;
 }
 QVariantMap TelegramStore::chatInfo() const {
     QVariantMap result=m_info,chat=m_chats.value(m_current);
@@ -180,7 +212,9 @@ bool TelegramStore::setNotifications(bool enabled){
 bool TelegramStore::actionResponse(const QVariantMap &object,const QVariantMap &pending){
     const QString kind=pending.value("kind").toString(),type=object.value("@type").toString(),chat=pending.value("chatId").toString();
     const bool current=chat==m_current && pending.value("generation").toUInt()==m_generation,error=type=="error";
-    if(kind=="message-action") {
+    if(kind=="media-properties"){
+        if(current)emit mediaProperties(pending.value("messageId").toString(),error?QVariantMap():object);
+    }else if(kind=="message-action") {
         if(current && pending.value("actionSerial").toUInt()==m_actionSerial) {
             const QString action=pending.value("action").toString();
             if(error || !object.value(action=="reply"?"can_be_replied":action=="edit"?"can_be_edited":"can_be_forwarded").toBool())m_error=ru("Telegram не разрешает это действие с сообщением.");
@@ -194,16 +228,34 @@ bool TelegramStore::actionResponse(const QVariantMap &object,const QVariantMap &
             if(current && pending.value("actionSerial").toUInt()==m_actionSerial) {m_composerContext.clear();m_error.clear();}
         }
     } else if(kind=="forward") {
-        const QString record=pending.value("recordId").toString();const QVariantList messages=object.value("messages").toList();
-        if(error || messages.isEmpty() || messages.first().toMap().isEmpty()) {
-            m_local.transition(record,"failed");if(m_forward.value("recordId")==record) {m_forward.insert("state","failed");m_forward.insert("status",ru("Telegram отклонил пересылку. Сообщение не переслано."));}
-        } else {
-            QVariantMap message=messages.first().toMap();
-            const QString earlyKey=chat+":"+identifier(message.value("id"));
-            if(m_earlyForwards.contains(earlyKey))message=m_earlyForwards.take(earlyKey);
-            recordSendResult(message,record);upsertMessage(message);rebuildMessages();
-            if(m_forward.value("recordId")==record) {const QString state=m_local.entry(record).value("state").toString();m_forward.insert("state",state);m_forward.insert("status",state=="sent"?ru("Сообщение переслано."):state=="failed"?ru("Пересылка отклонена."):ru("Передано Telegram. Ожидание подтверждения."));}
+        QStringList records=pending.value("recordIds").toStringList();if(records.isEmpty())records<<pending.value("recordId").toString();
+        const QVariantList messages=object.value("messages").toList();
+        for(int i=0;i<records.size();++i){
+            QVariantMap message=i<messages.size()?messages.at(i).toMap():QVariantMap();
+            if(error || message.isEmpty()){m_local.transition(records.at(i),"failed");continue;}
+            const QString key=chat+":"+identifier(message.value("id"));if(m_earlyForwards.contains(key))message=m_earlyForwards.take(key);
+            recordSendResult(message,records.at(i));upsertMessage(message);
         }
+        rebuildMessages();if(m_forward.value("recordId")==records.first())updateForwardStatus();
+    } else if(kind=="selection-check") {
+        if(!current || pending.value("actionSerial").toUInt()!=m_actionSerial)return true;
+        const bool forward=m_selectionState.value("action")=="forward";
+        const bool self=object.value("can_be_deleted_only_for_self").toBool() || object.value("can_be_deleted_for_all_users").toBool();
+        if(error || (forward && !object.value("can_be_forwarded").toBool()) || (!forward && !self)){
+            ++m_actionSerial;m_selectionState.clear();m_error=ru("Telegram не разрешает действие с частью выбранных сообщений.");
+        }else{
+            m_selectionState.insert("all",m_selectionState.value("all").toBool() && object.value("can_be_deleted_for_all_users").toBool());
+            m_selectionState.insert("self",m_selectionState.value("self").toBool() && object.value("can_be_deleted_only_for_self").toBool());
+            const int left=m_selectionState.value("remaining").toInt()-1;m_selectionState.insert("remaining",left);
+            if(!left){
+                if(!forward && !m_selectionState.value("all").toBool() && !m_selectionState.value("self").toBool()){m_selectionState.clear();m_error=ru("Для выбранных сообщений нет общего способа удаления.");emit changed();return true;}
+                m_selectionState.insert("state","ready");
+                if(forward){QStringList ids;for(QMap<qlonglong,QVariantMap>::const_iterator it=m_messages.constBegin();it!=m_messages.constEnd();++it)if(m_selected.contains(it.key()))ids<<QString::number(it.key());
+                    m_forward.clear();m_forward.insert("sourceChatId",m_current);m_forward.insert("messageIds",ids);m_forward.insert("messageId",ids.first());m_forward.insert("preview",ru("Выбрано сообщений: %1").arg(ids.size()));m_forward.insert("state","ready");emit forwardReady();}
+            }
+        }
+    } else if(kind=="delete") {
+        if(current){if(error){m_selectionState.clear();m_error=ru("Не удалось удалить сообщения. Выделение сохранено.");}else{foreach(const QVariant &id,pending.value("ids").toList()){m_messages.remove(id.toLongLong());m_removed.insert(id.toLongLong());m_selected.remove(id.toLongLong());}m_selectionState.clear();rebuildMessages();}}
     } else if(kind=="pin" || kind=="archive" || kind=="notifications") {
         if(error)m_error=ru("Не удалось изменить настройки чата (код %1).").arg(object.value("code").toInt());
         else if(kind=="notifications" && m_chats.contains(chat)) {m_chats[chat].insert("notificationSettings",pending.value("settings"));}
@@ -232,4 +284,10 @@ bool TelegramStore::actionResponse(const QVariantMap &object,const QVariantMap &
         emit infoChanged();
     } else return false;
     emit changed();return true;
+}
+
+bool TelegramStore::requestMediaProperties(const QString &id){
+    if(!m_ready || !m_messages.contains(id.toLongLong()))return false;
+    QVariantMap call=method("getMessageProperties");call.insert("chat_id",number(m_current));call.insert("message_id",number(id));
+    const QString request=submit(call,"media-properties",m_current);if(request.isEmpty())return false;m_requests[request].insert("messageId",id);return true;
 }

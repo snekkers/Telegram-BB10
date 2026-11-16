@@ -13,6 +13,7 @@ USER = 9007199254740990
 PUBLIC = -1001234567899
 archive_loaded = False
 actions = []
+only_all_delete = False
 forward_race = False
 people_calls=[]
 held_contact_open=[]
@@ -145,8 +146,8 @@ for line in sys.stdin:
         send({"@type": "updateConnectionState", "state": {"@type": "connectionStateReady"}})
         reply(query)
     elif kind == "setOption":
-        assert query["name"] == "use_quick_ack"
-        assert query["value"] == {"@type": "optionValueBoolean", "value": True}
+        assert query["name"] in ("use_quick_ack", "online")
+        assert query["value"]["@type"] == "optionValueBoolean"
         reply(query)
     elif kind == "loadChats":
         if query["chat_list"] == {"@type": "chatListArchive"}:
@@ -202,9 +203,18 @@ for line in sys.stdin:
         value = media_file(True, str(path))
         send({"@type": "updateFile", "file": value})
         reply(query, kind="file", **{k: v for k, v in value.items() if k != "@type"})
+    elif kind == "fixtureOnlyAllDelete":
+        only_all_delete=True;reply(query)
     elif kind == "getMessageProperties":
         actions.append(query)
-        reply(query,"messageProperties",can_be_replied=True,can_be_forwarded=query["message_id"]!=999,can_be_edited=query["message_id"]==50)
+        reply(query,"messageProperties",can_be_replied=True,can_be_forwarded=query["message_id"]!=999,can_be_edited=query["message_id"]==50,can_be_saved=True,can_be_deleted_only_for_self=query["message_id"]!=999 and not only_all_delete,can_be_deleted_for_all_users=query["message_id"]==50)
+    elif kind == "deleteMessages":
+        actions.append(query)
+        if only_all_delete:assert query["revoke"] is True
+        assert query["chat_id"]==A and query["message_ids"] and isinstance(query["revoke"],bool)
+        if query["revoke"]:assert query["message_ids"]==[50]
+        send({"@type":"updateDeleteMessages","chat_id":A,"message_ids":query["message_ids"],"is_permanent":True,"from_cache":False})
+        reply(query)
     elif kind == "editMessageText":
         actions.append(query)
         assert query["message_id"]==50 and query["reply_markup"] is None
@@ -213,7 +223,7 @@ for line in sys.stdin:
         reply(query,kind="message",**{k:v for k,v in value.items() if k!="@type"})
     elif kind == "forwardMessages":
         actions.append(query)
-        assert query["message_ids"]==[30] and query["from_chat_id"]==A and query["chat_id"]==B
+        assert query["message_ids"] in ([30],[30,50]) and query["from_chat_id"]==A and query["chat_id"]==B
         assert query["send_copy"] is False and query["remove_caption"] is False and query["options"]["paid_message_star_count"]==0
         value=message(8800,B,"Forwarded",True);value["forward_info"]={"origin":{"@type":"messageOriginUser","sender_user_id":USER}}
         if forward_race:
@@ -221,7 +231,7 @@ for line in sys.stdin:
             final={**value,"id":8801}
             send({"@type":"updateMessageSendSucceeded","old_message_id":8800,"message":final})
             value["sending_state"]={"@type":"messageSendingStatePending"}
-        reply(query,"messages",total_count=1,messages=[value])
+        reply(query,"messages",total_count=len(query["message_ids"]),messages=[value] if len(query["message_ids"])==1 else [value,message(8802,B,"Forwarded 2",True)])
     elif kind in ("toggleChatIsPinned","addChatToList"):
         actions.append(query)
         if kind=="toggleChatIsPinned":

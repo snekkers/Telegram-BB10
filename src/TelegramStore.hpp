@@ -54,6 +54,14 @@ public:
     bool beginMessageAction(const QString &messageId, const QString &action);
     void cancelComposer();
     bool forwardTo(const QString &chatId);
+    int selectionCount() const {return m_selected.size();}
+    QString selectedText() const;
+    QVariantMap selectionState() const {return m_selectionState;}
+    bool toggleSelected(const QString &id);
+    void clearSelection();
+    bool prepareSelection(const QString &action);
+    bool deleteSelected(bool revoke);
+
     QVariantMap chatInfo() const;
     QVariantList infoRows() const { return m_infoRows; }
     bool infoLoading() const { return m_infoLoading; }
@@ -95,7 +103,9 @@ public:
     void setSearchQuery(const QString &text);
     QString nextUnreadChat() const;
     bool markRead();
+    void setForeground(bool value);
     bool downloadMedia(const QString &messageId);
+    bool requestMediaProperties(const QString &messageId);
     QString mediaPath(const QString &messageId) const;
     QString mediaMime(const QString &messageId) const;
 
@@ -120,6 +130,7 @@ signals:
     void recipientChatsChanged();
     void contactsChanged();
     void contactChatReady(const QString &chatId);
+    void mediaProperties(const QString &messageId,const QVariantMap &properties);
     void avatarChanged(const QString &key);
 
 public slots:
@@ -151,6 +162,7 @@ private:
     bool editText(const QString &text);
     void applyMessageAction(const QString &messageId, const QString &action);
     void updateInfoRows();
+    void updateForwardStatus();
     bool actionResponse(const QVariantMap &object, const QVariantMap &pending);
     bool peopleResponse(const QVariantMap &object,const QVariantMap &pending);
     bool peopleUpdate(const QVariantMap &object);
@@ -182,6 +194,8 @@ private:
     QMap<qlonglong, QVariantMap> m_messages, m_overlays;
     QMap<int, QVariantMap> m_files;
     QSet<int> m_downloading;
+    QSet<qlonglong> m_selected;
+    QVariantMap m_selectionState;
     QSet<QString> m_recoveredTexts;
     QSet<qlonglong> m_historyTouched, m_removed;
     QVariantList m_chatRows, m_messageRows;
@@ -204,6 +218,7 @@ private:
     QString m_current, m_error, m_connection, m_seenPhase, m_search, m_chatCategory, m_targetMessage;
     qlonglong m_historyCursor;
     unsigned m_generation;
+    bool m_foreground;
     bool m_ready, m_loadingChats, m_loadingHistory, m_chatsEnd, m_historyEnd, m_online;
     bool m_archiveView, m_archiveEnd, m_infoLoading, m_infoEnd;
     Q_DISABLE_COPY(TelegramStore)
