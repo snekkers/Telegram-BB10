@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
-BASE=ROOT/'build/root-preparation';WORK=ROOT/'build/ui-refresh'
+BASE=ROOT/'build/root-preparation';WORK=ROOT/'build/search-tabs'
 sys.path.insert(0,str(BASE/'python'))
 import paramiko
 bar=ROOT/'build/device/berrygram-device.bar'
@@ -18,7 +18,7 @@ with zipfile.ZipFile(bar) as archive:
     fields=dict(line.split(': ',1) for line in manifest.splitlines() if ': ' in line)
     assert fields['Package-Name']=='org.example.berrygram'
     assert fields['Package-Architecture']=='armle-v7'
-    assert fields['Package-Version']=='0.8.0.10'
+    assert fields['Package-Version']=='0.9.0.11'
     app_id=fields['Package-Name']+'.'+fields['Package-Id']
     expected={name:hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist()
         if name.startswith('native/') and not name.endswith('/')}
@@ -80,7 +80,7 @@ try:
                 s.chown(directory,uid,gid);s.chmod(directory,0o700)
             for name in ['ChatPage.qml','AppHeader.qml','Ui.js']:
                 path=qa+'/reference/'+name
-                with s.open(path,'wb') as f:f.write((WORK/'reference'/name).read_bytes())
+                with s.open(path,'wb') as f:f.write((ROOT/'build/ui-refresh/reference'/name).read_bytes())
                 s.chown(path,uid,gid);s.chmod(path,0o600)
             with s.open(qa+'/enabled','wb') as f:f.write(b'offline-ui-checks\n')
             s.chown(qa+'/enabled',uid,gid);s.chmod(qa+'/enabled',0o600)

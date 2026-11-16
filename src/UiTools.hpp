@@ -6,13 +6,14 @@
 #include <QVariantMap>
 class ChatController;
 class TelegramController;
+class SearchController;
 namespace bb { namespace cascades { class AbstractPane; } }
 
 class UiTools : public QObject {
     Q_OBJECT
     Q_PROPERTY(bool checksEnabled READ checksEnabled CONSTANT)
 public:
-    UiTools(ChatController *demo, TelegramController *live, QObject *parent = 0);
+    UiTools(ChatController *demo, TelegramController *live, SearchController *search, QObject *parent = 0);
     void setRoot(bb::cascades::AbstractPane *root);
     bool checksEnabled() const { return m_checks; }
     Q_INVOKABLE void openMenu(QObject *page);
@@ -25,6 +26,7 @@ private:
     QPointer<bb::cascades::AbstractPane> m_root;
     ChatController *m_demo;
     TelegramController *m_live;
+    SearchController *m_search;
     QTimer m_timer;
     QString m_directory, m_id;
     QVariantMap m_result;

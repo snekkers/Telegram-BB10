@@ -3,6 +3,7 @@
 #include "TelegramStore.hpp"
 #include "TelegramController.hpp"
 #include "UiTools.hpp"
+#include "SearchController.hpp"
 
 #include <bb/cascades/AbstractPane>
 #include <bb/cascades/Application>
@@ -23,7 +24,9 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     TelegramSession telegram;
     TelegramStore store(&telegram);
     TelegramController telegramController(&store);
-    UiTools uiTools(&controller,&telegramController);
+    TelegramSearch telegramSearch(&telegram,&store);
+    SearchController searchController(&telegramSearch,&controller);
+    UiTools uiTools(&controller,&telegramController,&searchController);
     QObject::connect(QCoreApplication::instance(), SIGNAL(aboutToQuit()), &store, SLOT(flushDrafts()));
 
     bb::cascades::QmlDocument *document =
@@ -32,6 +35,7 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     document->setContextProperty("_telegram", &telegram);
     document->setContextProperty("_live", &telegramController);
     document->setContextProperty("_ui", &uiTools);
+    document->setContextProperty("_search", &searchController);
 
     if (document->hasErrors()) {
         qCritical() << "Cannot load assets/main.qml";

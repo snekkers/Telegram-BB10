@@ -34,6 +34,10 @@ class TelegramController : public QObject {
     Q_PROPERTY(bool canSendSelected READ canSendSelected NOTIFY changed)
     Q_PROPERTY(bool hasFailedAttachment READ hasFailedAttachment NOTIFY changed)
     Q_PROPERTY(int chatCount READ chatCount NOTIFY changed)
+    Q_PROPERTY(int personalCount READ personalCount NOTIFY changed)
+    Q_PROPERTY(int communityCount READ communityCount NOTIFY changed)
+    Q_PROPERTY(int targetMessageIndex READ targetMessageIndex NOTIFY changed)
+    Q_PROPERTY(QString targetMessageId READ targetMessageId NOTIFY changed)
 public:
     explicit TelegramController(TelegramStore *store, QObject *parent = 0);
     bb::cascades::DataModel *chats() const { return m_chats; }
@@ -53,6 +57,13 @@ public:
     bool sendBusy() const { return m_store->sendBusy(); }
     int scrollSerial() const { return m_scrollSerial; }
     int chatCount() const { return m_chats->size(); }
+    int personalCount() const { return m_store->personalCount(); }
+    int communityCount() const { return m_store->communityCount(); }
+    int targetMessageIndex() const { return m_store->targetMessageIndex(); }
+    QString targetMessageId() const { return m_store->targetMessageId(); }
+    Q_INVOKABLE void setChatCategory(const QString &category) { m_store->setChatCategory(category); }
+    Q_INVOKABLE bool openChatAt(const QString &id, const QString &messageId) { leaveAttachment(); return m_store->openChatAt(id,messageId); }
+    Q_INVOKABLE bool latestMessages() { return openChat(m_store->currentChatId()); }
     Q_INVOKABLE bool openChat(const QString &id) { leaveAttachment(); return m_store->openChat(id); }
     Q_INVOKABLE void closeChat() { leaveAttachment(); m_store->closeChat(); }
     Q_INVOKABLE bool sendText(const QString &text) { return m_store->sendText(text); }

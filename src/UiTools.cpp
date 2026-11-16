@@ -1,11 +1,16 @@
 #include "UiTools.hpp"
 #include "ChatController.hpp"
 #include "TelegramController.hpp"
+#include "SearchController.hpp"
 #include "PrivateFile.hpp"
 #include <bb/cascades/AbstractPane>
 #include <bb/cascades/AbstractTextControl>
 #include <bb/cascades/Application>
 #include <bb/cascades/ImageButton>
+#include <bb/cascades/Button>
+#include <bb/cascades/SegmentedControl>
+#include <bb/cascades/TextField>
+#include <bb/cascades/ListView>
 #include <bb/cascades/NavigationPane>
 #include <bb/cascades/Page>
 #include <bb/cascades/QmlDocument>
@@ -25,8 +30,8 @@
 
 using namespace bb::cascades;
 
-UiTools::UiTools(ChatController *demo, TelegramController *live, QObject *parent)
-    : QObject(parent), m_demo(demo), m_live(live),
+UiTools::UiTools(ChatController *demo, TelegramController *live, SearchController *search, QObject *parent)
+    : QObject(parent), m_demo(demo), m_live(live), m_search(search),
       m_directory(QDir::currentPath()+"/data/ui-check"), m_checks(false), m_pending(false)
 {
 #ifdef BERRYGRAM_UI_CHECKS
@@ -65,10 +70,19 @@ void UiTools::checkRequest()
     } else {
         const QString action=request.value("action").toString();
         bool ok=false;
-        if (action=="demo-chat" && navigation->count()==1) {
+        if (action=="demo-list" && navigation->count()==1) {
+            navigation->setProperty("demo",true);ok=true;
+        } else if (action=="chat-tab" && navigation->count()==1) {
+            SegmentedControl *tabs=navigation->top()->findChild<SegmentedControl*>("chatTabs");
+            if(tabs){tabs->setSelectedIndex(request.value("index").toInt()==1?1:0);ok=true;}
+        } else if(action=="search" && navigation->count()==1) {
+            navigation->setProperty("demo",true);
+            Button *button=navigation->top()->findChild<Button*>("globalSearchButton");
+            ok=button && QMetaObject::invokeMethod(button,"clicked");
+        } else if (action=="demo-chat" && navigation->count()==1) {
             navigation->setProperty("demo",true);
             const QString id=request.value("group").toBool()?"demo-project":"demo-anna";
-            ok=QMetaObject::invokeMethod(navigation,"openChatById",Q_ARG(QVariant,QVariant(id)));
+            ok=QMetaObject::invokeMethod(navigation,"openChatById",Q_ARG(QVariant,QVariant(id)),Q_ARG(QVariant,QVariant(QString())));
         } else if (action=="reference" && navigation->count()==1) {
             navigation->setProperty("demo",true);m_demo->openChat("demo-anna");
             QmlDocument *document=QmlDocument::create(QUrl::fromLocalFile(m_directory+"/reference/ChatPage.qml")).parent(this);
@@ -85,7 +99,18 @@ void UiTools::checkRequest()
         } else if(navigation->top() && navigation->count()>1) {
             Page *page=navigation->top();
             TextArea *field=page->findChild<TextArea*>("messageField");
-            if(action=="compose" && field) {
+            if(page->objectName()=="searchPage") {
+                TextField *query=page->findChild<TextField*>("searchQuery");
+                if(action=="search-query" && query) {query->setText(request.value("text").toString().left(256));ok=true;}
+                else if(action=="search-mode" || action=="search-filter") {
+                    SegmentedControl *tabs=page->findChild<SegmentedControl*>(action=="search-mode"?"searchTabs":"searchFilters");
+                    const int index=qBound(0,request.value("index").toInt(),action=="search-mode"?2:3);
+                    if(tabs){tabs->setSelectedIndex(index);ok=true;}
+                } else if(action=="search-open" && m_search->count()>0) {
+                    ListView *list=page->findChild<ListView*>("searchResults");
+                    ok=list && QMetaObject::invokeMethod(list,"triggered",Q_ARG(QVariantList,QVariantList()<<0));
+                }
+            } else if(action=="compose" && field) {
                 field->setText(request.value("text").toString().left(4096));
                 field->editor()->setCursorPosition(field->text().size());field->requestFocus();ok=true;
             } else if((action=="send" || action=="newline") && field) {
@@ -113,6 +138,7 @@ void UiTools::finishCheck()
     NavigationPane *navigation=qobject_cast<NavigationPane*>(m_root.data());
     const bool demoPage=navigation && navigation->top() && !m_live->ready() &&
         navigation->property("demo").toBool() && (navigation->count()==1 ||
+        navigation->top()->objectName()=="searchPage" ||
         (navigation->top()->objectName()=="chatPage" && !navigation->top()->property("liveChat").toBool()));
     if(demoPage) {
         Page *page=navigation->top();
@@ -135,6 +161,20 @@ void UiTools::finishCheck()
         QObject *send=page->findChild<QObject*>("sendButton");
         if(send)m_result.insert("send_enabled",send->property("enabled"));
         m_result.insert("message_count",m_demo->messages()->childCount(QVariantList()));
+        m_result.insert("chat_count",m_demo->chatCount());
+        m_result.insert("category",navigation->property("chatCategory"));
+        m_result.insert("search_count",m_search->count());
+        m_result.insert("target_index",m_demo->targetMessageIndex());
+        m_result.insert("target_message",m_demo->targetMessageId());
+        TextField *query=page->findChild<TextField*>("searchQuery");
+        if(query)m_result.insert("query",query->text());
+        if(page->objectName()=="searchPage") {
+            m_result.insert("search_mode",page->property("mode"));
+            m_result.insert("search_filter",page->property("filter"));
+            QVariantList ids;
+            for(int i=0;i<m_search->count();++i)ids.append(m_search->results()->data(QVariantList()<<i).toMap().value("chatId"));
+            m_result.insert("search_chat_ids",ids);
+        }
     }
     m_result.insert("capture_ok",demoPage && m_result.value("ok").toBool() && capture(m_directory+"/"+m_id+".png"));
     PrivateFile::write(m_directory+"/result.json",m_result,16384);

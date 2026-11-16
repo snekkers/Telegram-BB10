@@ -25,7 +25,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.8.0.10" in manifest
+            assert "Package-Version: 0.9.0.11" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
             entry = next(line for line in manifest.splitlines() if line.startswith("Entry-Point: "))

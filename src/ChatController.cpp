@@ -70,6 +70,7 @@ void ChatController::addDemoChat(const QString &id, const QString &title,
     row.insert("order", order);
     row.insert("time", QDateTime::currentDateTime().toString("HH:mm"));
     row.insert("unreadLabel", order == 1 ? QString("2") : QString());
+    row.insert("personal", id == "demo-saved" || id == "demo-anna");
     m_chatRows.append(row);
 
     QVariantList history;
@@ -89,26 +90,36 @@ void ChatController::refreshChats()
 {
     m_chats->clear();
     for (int i = 0; i < m_chatRows.size(); ++i) {
-        m_chats->insert(m_chatRows.at(i).toMap());
+        const QVariantMap row=m_chatRows.at(i).toMap();
+        if(m_category.isEmpty() || row.value("personal").toBool()==(m_category=="personal")) m_chats->insert(row);
     }
+    emit currentChatChanged();
 }
 
 void ChatController::refreshMessages()
 {
     m_messages->clear();
-    const QVariantList rows = MessagePresentation::decorate(m_history.value(m_currentChatId),
+    QVariantList rows = MessagePresentation::decorate(m_history.value(m_currentChatId),
         m_currentChatId == "demo-project" || m_currentChatId == "demo-bb10",
         "2", m_currentChatId == "demo-anna");
-    for (int i = 0; i < rows.size(); ++i) m_messages->insert(rows.at(i).toMap());
+    for (int i = 0; i < rows.size(); ++i) {
+        QVariantMap row=rows.at(i).toMap();row.insert("searchTarget",row.value("messageId").toString()==m_targetMessage && !m_targetMessage.isEmpty());m_messages->insert(row);
+    }
 }
 
 bool ChatController::openChat(const QString &chatId)
+{
+    return openChatAt(chatId,QString());
+}
+
+bool ChatController::openChatAt(const QString &chatId,const QString &messageId)
 {
     if (!m_history.contains(chatId)) {
         return false;
     }
 
     m_currentChatId = chatId;
+    m_targetMessage = messageId;
     for (int i = 0; i < m_chatRows.size(); ++i) {
         const QVariantMap row = m_chatRows.at(i).toMap();
         if (row.value("chatId").toString() == chatId) {
@@ -125,6 +136,7 @@ bool ChatController::openChat(const QString &chatId)
 void ChatController::closeChat()
 {
     m_currentChatId.clear();
+    m_targetMessage.clear();
     m_currentChatTitle.clear();
     m_messages->clear();
     emit currentChatChanged();
@@ -153,4 +165,35 @@ bool ChatController::sendDemoMessage(const QString &text)
     }
     refreshChats();
     return true;
+}
+
+void ChatController::setChatCategory(const QString &category) { m_category=category;refreshChats(); }
+int ChatController::chatCount() const { return m_chats->childCount(QVariantList()); }
+int ChatController::personalCount() const {
+    int count=0;foreach(const QVariant &value,m_chatRows)if(value.toMap().value("personal").toBool())++count;return count;
+}
+int ChatController::targetMessageIndex() const {
+    const QVariantList rows=m_history.value(m_currentChatId);
+    for(int i=0;i<rows.size();++i)if(rows.at(i).toMap().value("messageId")==m_targetMessage)return i;
+    return -1;
+}
+QVariantList ChatController::search(const QString &query,int mode,int filter) const {
+    QVariantList result;const QString text=query.trimmed();
+    if(text.isEmpty() || (mode==2 && filter!=0))return result;
+    foreach(const QVariant &value,m_chatRows) {
+        const QVariantMap chat=value.toMap();
+        if(mode==2) {
+            foreach(const QVariant &message,m_history.value(chat.value("chatId").toString())) {
+                const QVariantMap source=message.toMap();
+                if(!source.value("text").toString().contains(text,Qt::CaseInsensitive))continue;
+                QVariantMap row=chat;row.insert("messageId",source.value("messageId"));row.insert("preview",source.value("text"));
+                row.insert("key",chat.value("chatId").toString()+":"+source.value("messageId").toString());
+                row.insert("unreadLabel",QString());result.append(row);
+            }
+        } else if(chat.value("title").toString().contains(text,Qt::CaseInsensitive)) {
+            QVariantMap row=chat;row.insert("key",chat.value("chatId"));row.insert("messageId",QString());row.insert("unreadLabel",QString());
+            if(mode==1)row.insert("preview",QString::fromUtf8("Пример результата · демо"));result.append(row);
+        }
+    }
+    return result;
 }

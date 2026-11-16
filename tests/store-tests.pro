@@ -11,3 +11,5 @@ HEADERS += ../src/PrivateFile.hpp
 
 SOURCES += ../src/LocalOutbox.cpp
 HEADERS += ../src/LocalOutbox.hpp
+SOURCES += ../src/TelegramSearch.cpp
+HEADERS += ../src/TelegramSearch.hpp

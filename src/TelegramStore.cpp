@@ -120,7 +120,7 @@ void TelegramStore::reset()
     m_files.clear(); m_downloading.clear();
     m_chatRows.clear(); m_messageRows.clear();
     m_failedAttachments.clear(); m_sentAttachments.clear(); m_earlyAttachmentOutcomes.clear();
-    m_historyCursor = 0;
+    m_historyCursor = 0; m_targetMessage.clear();
     m_loadingChats = m_loadingHistory = m_chatsEnd = m_historyEnd = false;
     emit chatsChanged();
     emit messagesChanged();
@@ -204,7 +204,10 @@ void TelegramStore::rebuildChats()
     QList<QVariantMap> ordered;
     QMap<QString, QVariantMap>::const_iterator it;
     for (it = m_chats.constBegin(); it != m_chats.constEnd(); ++it) {
+        const QString type = it.value().value("type").toString();
+        const bool personal = type == "chatTypePrivate" || type == "chatTypeSecret";
         if (it.value().value("mainOrder").toLongLong() > 0 &&
+            (m_chatCategory.isEmpty() || (m_chatCategory == "personal" ? personal : !personal)) &&
             (m_search.isEmpty() || it.value().value("title").toString().contains(m_search, Qt::CaseInsensitive)))
             ordered.append(it.value());
     }
@@ -427,10 +430,16 @@ bool TelegramStore::sendAttachment(const QString &path, const QString &kind, con
 
 bool TelegramStore::openChat(const QString &id)
 {
+    return openChatAt(id, QString());
+}
+
+bool TelegramStore::openChatAt(const QString &id, const QString &messageId)
+{
     if (!m_ready || !m_chats.contains(id))
         return false;
     closeChat();
     m_current = id;
+    m_targetMessage = messageId.toLongLong() > 0 ? QString::number(messageId.toLongLong()) : QString();
     QVariantMap call = method("openChat");
     call.insert("chat_id", number(id));
     submit(call, "open", id);
@@ -449,6 +458,7 @@ void TelegramStore::closeChat()
     }
     ++m_generation;
     m_current.clear();
+    m_targetMessage.clear();
     m_messages.clear(); m_overlays.clear(); m_historyTouched.clear(); m_removed.clear();
     m_historyCursor = 0;
     m_loadingHistory = m_historyEnd = false;
@@ -464,8 +474,8 @@ void TelegramStore::history(bool initial)
     initial = initial || m_historyCursor == 0;
     QVariantMap call = method("getChatHistory");
     call.insert("chat_id", number(m_current));
-    call.insert("from_message_id", QVariant::fromValue(initial ? qlonglong(0) : m_historyCursor));
-    call.insert("offset", 0);
+    call.insert("from_message_id", QVariant::fromValue(initial ? m_targetMessage.toLongLong() : m_historyCursor));
+    call.insert("offset", initial && !m_targetMessage.isEmpty() ? -20 : 0);
     call.insert("limit", 50);
     call.insert("only_local", !m_online);
     QString id = submit(call, "history", m_current);
@@ -654,6 +664,7 @@ void TelegramStore::rebuildMessages()
             author = m_chats.value(row.value("senderChatId").toString()).value("title").toString();
         row.insert("author", author);
         row.insert("delivery", delivery(row));
+        row.insert("searchTarget", row.value("messageId").toString() == m_targetMessage && !m_targetMessage.isEmpty());
         rows.append(row);
     }
     QList<QVariantMap> local;
@@ -747,6 +758,48 @@ void TelegramStore::setSearchQuery(const QString &text)
     m_search = text.trimmed().left(256);
     rebuildChats();
     emit changed();
+}
+
+QVariantList TelegramStore::knownChats() const
+{
+    QVariantList result;
+    foreach (const QVariantMap &chat, m_chats) result.append(chat);
+    return result;
+}
+
+void TelegramStore::setChatCategory(const QString &category)
+{
+    const QString next = category == "personal" || category == "community" ? category : QString();
+    if (next == m_chatCategory) return;
+    m_chatCategory = next; rebuildChats(); emit changed();
+}
+
+int TelegramStore::personalCount() const
+{
+    int count = 0;
+    foreach (const QVariantMap &chat, m_chats) {
+        const QString type = chat.value("type").toString();
+        if (chat.value("mainOrder").toLongLong() > 0 && (type == "chatTypePrivate" || type == "chatTypeSecret")) ++count;
+    }
+    return count;
+}
+
+int TelegramStore::communityCount() const
+{
+    int count = 0;
+    foreach (const QVariantMap &chat, m_chats) {
+        const QString type = chat.value("type").toString();
+        if (chat.value("mainOrder").toLongLong() > 0 && type != "chatTypePrivate" && type != "chatTypeSecret") ++count;
+    }
+    return count;
+}
+
+int TelegramStore::targetMessageIndex() const
+{
+    if (!m_targetMessage.isEmpty())
+        for (int i = 0; i < m_messageRows.size(); ++i)
+            if (m_messageRows.at(i).toMap().value("messageId").toString() == m_targetMessage) return i;
+    return -1;
 }
 
 QString TelegramStore::nextUnreadChat() const
@@ -945,8 +998,8 @@ void TelegramStore::consume(const QVariantMap &object)
         m_chats[chatId].insert("preview", messageText(object.value("new_content").toMap()).left(160));
         rebuildChats();
     }
-    if (type == "updateNewChat") {
-        const QVariantMap source = object.value("chat").toMap();
+    if (type == "updateNewChat" || type == "chat") {
+        const QVariantMap source = type == "chat" ? object : object.value("chat").toMap();
         const QString id = idString(source.value("id"));
         QVariantMap chat;
         chat.insert("chatId", id);

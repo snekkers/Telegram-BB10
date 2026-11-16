@@ -19,6 +19,13 @@ public:
     ~TelegramStore();
     QVariantList chats() const { return m_chatRows; }
     QVariantList messages() const { return m_messageRows; }
+    QVariantList knownChats() const;
+    QVariantMap chat(const QString &id) const { return m_chats.value(id); }
+    void setChatCategory(const QString &category);
+    int personalCount() const;
+    int communityCount() const;
+    QString targetMessageId() const { return m_targetMessage; }
+    int targetMessageIndex() const;
     bool ready() const { return m_ready; }
     bool loadingChats() const { return m_loadingChats; }
     bool loadingHistory() const { return m_loadingHistory; }
@@ -56,6 +63,7 @@ public:
     QString mediaMime(const QString &messageId) const;
 
     bool openChat(const QString &id);
+    bool openChatAt(const QString &id, const QString &messageId);
     void closeChat();
     void loadMoreChats();
     void loadMoreHistory();
@@ -115,7 +123,7 @@ private:
     QSet<QString> m_recoveredTexts;
     QSet<qlonglong> m_historyTouched, m_removed;
     QVariantList m_chatRows, m_messageRows;
-    QString m_current, m_error, m_connection, m_seenPhase, m_search;
+    QString m_current, m_error, m_connection, m_seenPhase, m_search, m_chatCategory, m_targetMessage;
     qlonglong m_historyCursor;
     unsigned m_generation;
     bool m_ready, m_loadingChats, m_loadingHistory, m_chatsEnd, m_historyEnd, m_online;

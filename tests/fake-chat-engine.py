@@ -9,7 +9,10 @@ from pathlib import Path
 assert Path(sys.argv[sys.argv.index("--library") + 1]).is_file()
 A, B, C = -1001234567890, 9007199254740991, -1001234567891
 USER = 9007199254740990
+PUBLIC = -1001234567899
 loaded = False
+held_search = []
+search_calls = []
 hold_next_history = False
 held_history = []
 held_sends = []
@@ -62,7 +65,9 @@ def history(query):
     assert isinstance(cid, int) and isinstance(start, int), "int53 requests must be JSON numbers"
     assert query["limit"] == 50 and isinstance(query["only_local"], bool)
     last_only_local = query["only_local"]
-    if cid == A:
+    if start > 0 and query["offset"] == -20:
+        rows = [message(start + 1, cid), message(start, cid), message(start - 1, cid)]
+    elif cid == A:
         if start == 0:
             photo = message(20)
             photo["content"] = {"@type": "messagePhoto", "caption": {"text": "Подпись фото"},
@@ -85,6 +90,32 @@ for line in sys.stdin:
         reply(query, "optionValueString", value="1.8.69")
     elif kind == "getMe":
         reply(query, "user", id=USER, first_name="Fixture", last_name="")
+    elif kind in ("searchPublicChats", "searchChats", "searchChatsOnServer", "searchMessages"):
+        search_calls.append(query)
+        if query["query"] == "slow":
+            held_search.append(query)
+            continue
+        if query["query"] == "deny":
+            reply(query, "error", code=429, message="private diagnostic")
+            continue
+        if kind == "searchMessages":
+            assert query["chat_list"] is None and query["chat_type_filter"] is None
+            assert query["limit"] == 30 and query["min_date"] == 0 and query["max_date"] == 0
+            assert query["filter"]["@type"] in ("searchMessagesFilterEmpty", "searchMessagesFilterPhoto", "searchMessagesFilterDocument", "searchMessagesFilterUrl")
+            if query["offset"] == "":
+                reply(query, "foundMessages", total_count=3, messages=[message(555, PUBLIC, "Needle public"), message(20, A, "Needle group")], next_offset="page2")
+            else:
+                assert query["offset"] == "page2"
+                reply(query, "foundMessages", total_count=3, messages=[message(20, A), message(10, B, "Needle private")], next_offset="")
+        else:
+            assert query["type_filter"] is None
+            ids = [PUBLIC] if kind == "searchPublicChats" else [B] if kind == "searchChats" else [B, A]
+            reply(query, "chats", total_count=len(ids), chat_ids=ids)
+    elif kind == "getChat":
+        assert query["chat_id"] == PUBLIC
+        value = chat(PUBLIC, "Публичный канал", 0, False)
+        value["type"] = {"@type": "chatTypeSupergroup", "is_channel": True}
+        reply(query, kind="chat", **{k:v for k,v in value.items() if k != "@type"})
     elif kind == "getMessage":
         reply(query, "error", code=404, message="Fixture no longer has the temporary message")
     elif kind == "setTdlibParameters":
@@ -109,7 +140,7 @@ for line in sys.stdin:
                 send({"@type": "updateNewChat", "chat": row})
             reply(query)
     elif kind in ("openChat", "closeChat"):
-        assert query["chat_id"] in (A, B, C) and isinstance(query["chat_id"], int)
+        assert query["chat_id"] in (A, B, C, PUBLIC) and isinstance(query["chat_id"], int)
         reply(query)
     elif kind == "setChatDraftMessage":
         assert query["chat_id"] in (A, B, C)
@@ -227,7 +258,11 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "holdHistory":
+        if op == "releaseSearch":
+            for request in held_search:
+                reply(request, "chats", total_count=1, chat_ids=[C])
+            held_search.clear()
+        elif op == "holdHistory":
             hold_next_history = True
         elif op == "releaseHistory":
             for request in held_history:
@@ -260,7 +295,7 @@ for line in sys.stdin:
             held_sends.clear()
         else:
             assert op == "stats", op
-        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local)
+        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local, search_calls=search_calls)
     else:
         raise AssertionError(kind)
 

@@ -26,6 +26,8 @@ HEADERS += $$PWD/src/MessagePresentation.hpp
 SOURCES += $$PWD/src/UiTools.cpp
 HEADERS += $$PWD/src/UiTools.hpp
 LIBS += -lscreen
+SOURCES += $$PWD/src/TelegramSearch.cpp $$PWD/src/SearchController.cpp
+HEADERS += $$PWD/src/TelegramSearch.hpp $$PWD/src/SearchController.hpp
 LIBS += -lbbdata -lbbsystem -lbbcascadespickers -lbbmultimedia
 OTHER_FILES += $$PWD/bar-descriptor.xml \
                $$PWD/assets/main.qml \

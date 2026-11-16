@@ -29,7 +29,7 @@ Page {
         }
     ]
     onScrollSerialChanged: {
-        if (liveChat && messageList) messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.None);
+        if (liveChat && messageList) scrollToTarget();
     }
 
     function submitDraft() {
@@ -42,7 +42,16 @@ Page {
             messageField.requestFocus();
         }
     }
-    function focusComposer() { messageField.requestFocus(); }
+    function scrollToTarget() {
+        var source = liveChat ? _live : _chat;
+        if (source.targetMessageIndex >= 0) messageList.scrollToItem([source.targetMessageIndex], ScrollAnimation.None);
+        else messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.None);
+    }
+    function focusComposer() {
+        var source = liveChat ? _live : _chat;
+        if (source.targetMessageId.length > 0) { scrollToTarget(); messageList.requestFocus(); }
+        else messageField.requestFocus();
+    }
     function nextUnread() {
         var id = _live.nextUnreadChat();
         if (id.length > 0 && _live.openChat(id)) {
@@ -105,6 +114,12 @@ Page {
             textStyle.color: Color.create(Ui.secondary)
             horizontalAlignment: HorizontalAlignment.Center
         }
+        Button {
+            visible: chatPage.liveChat && _live.targetMessageId.length > 0
+            text: qsTr("К последним сообщениям")
+            horizontalAlignment: HorizontalAlignment.Fill
+            onClicked: _live.latestMessages()
+        }
         Label {
             visible: chatPage.liveChat && _live.errorText.length > 0
             text: _live.errorText
@@ -147,6 +162,14 @@ Page {
                         minWidth: preferredWidth
                         maxWidth: preferredWidth
                         horizontalAlignment: HorizontalAlignment.Fill
+                        background: ListItemData.searchTarget === true ? Color.create("#fff0bb") : Color.Transparent
+                        Label {
+                            visible: ListItemData.searchTarget === true
+                            text: qsTr("Найденное сообщение")
+                            textStyle.base: SystemDefaults.TextStyles.SmallText
+                            textStyle.color: Color.create(Ui.blue)
+                            horizontalAlignment: HorizontalAlignment.Center
+                        }
                         Label {
                             visible: ListItemData.startsDay === true
                             text: ListItemData.dateLabel || ""

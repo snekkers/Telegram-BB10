@@ -1,5 +1,6 @@
 #include "TelegramSession.hpp"
 #include "TelegramStore.hpp"
+#include "TelegramSearch.hpp"
 #include "LocalOutbox.hpp"
 #include "PrivateFile.hpp"
 #include "MessagePresentation.hpp"
@@ -85,6 +86,60 @@ private:
     }
 
 private slots:
+    void chatTabsSeparatePrivateAndCommunityWithoutLosingRows() {
+        Peer peer;ready(peer);
+        QCOMPARE(peer.store.personalCount(),1);QCOMPARE(peer.store.communityCount(),2);
+        peer.store.setChatCategory("personal");QCOMPARE(peer.store.chats().size(),1);
+        QCOMPARE(peer.store.chats().first().toMap().value("chatId").toString(),B);
+        peer.store.setChatCategory("community");QCOMPARE(peer.store.chats().size(),2);
+        QCOMPARE(peer.store.knownChats().size(),4);
+        peer.store.setChatCategory("personal");
+        QVariantMap event=object("updateChatTitle");event.insert("title","Renamed group");update(peer,event,A);
+        QCOMPARE(peer.store.chats().size(),1);
+        peer.store.setChatCategory("community");QCOMPARE(peer.store.chats().first().toMap().value("title").toString(),QString("Renamed group"));
+    }
+    void searchMergesServerChatsAndIgnoresLatePreviousQuery() {
+        Peer peer;ready(peer);peer.store.setChatCategory("personal");
+        TelegramSearch search(&peer.session,&peer.store);
+        search.search("slow",1);QTest::qWait(450);QVERIFY(search.loading());
+        search.search("needle",0);QTRY_VERIFY(!search.loading());QCOMPARE(search.rows().size(),2);
+        QVERIFY(!control(peer,"releaseSearch").isEmpty());QTest::qWait(50);
+        QCOMPARE(search.rows().size(),2);
+        QCOMPARE(peer.store.chats().size(),1); // Search doesn't change the selected main tab.
+        search.cancel();QVERIFY(search.rows().isEmpty());QVERIFY(!search.loading());
+    }
+    void publicSearchHydratesUnknownChannelAndOpensWithoutJoining() {
+        Peer peer;ready(peer);TelegramSearch search(&peer.session,&peer.store);
+        search.search("public",1);QTRY_VERIFY(!search.loading());QCOMPARE(search.rows().size(),1);
+        const QVariantMap hit=search.rows().first().toMap();
+        QCOMPARE(hit.value("chatId").toString(),QString("-1001234567899"));
+        QCOMPARE(hit.value("title").toString(),QString::fromUtf8("Публичный канал"));
+        QVERIFY(peer.store.openChat(hit.value("chatId").toString()));QTRY_VERIFY(!peer.store.loadingHistory());
+        QCOMPARE(peer.store.chats().size(),3); // Merely viewing a public chat doesn't subscribe to it.
+        QVERIFY(!peer.store.canSend());
+    }
+    void messageSearchPagesDeduplicatesAndJumpsToExactMessage() {
+        Peer peer;ready(peer);TelegramSearch search(&peer.session,&peer.store);
+        search.search("needle",2);QTRY_VERIFY(!search.loading());QCOMPARE(search.rows().size(),2);
+        QVERIFY(search.canLoadMore());const QVariantMap hit=search.rows().first().toMap();
+        QCOMPARE(hit.value("messageId").toString(),QString("555"));
+        search.loadMore();QTRY_VERIFY(!search.loading());QCOMPARE(search.rows().size(),3);QVERIFY(!search.canLoadMore());
+        QVERIFY(peer.store.openChatAt(hit.value("chatId").toString(),hit.value("messageId").toString()));
+        QTRY_VERIFY(!peer.store.loadingHistory());QCOMPARE(peer.store.targetMessageIndex(),1);
+        QVERIFY(row(peer.store,"555").value("searchTarget").toBool());
+        QCOMPARE(peer.store.targetMessageId(),QString("555"));
+        peer.store.closeChat();QVERIFY(peer.store.targetMessageId().isEmpty());
+    }
+    void messageSearchFiltersAndErrorsAreBoundedAndRetryable() {
+        Peer peer;ready(peer);TelegramSearch search(&peer.session,&peer.store,0,500);
+        search.search("",2,1);QTRY_VERIFY(!search.loading());QCOMPARE(search.rows().size(),2);
+        const QVariantList calls=control(peer,"stats").value("search_calls").toList();
+        QCOMPARE(calls.last().toMap().value("filter").toMap().value("@type").toString(),QString("searchMessagesFilterPhoto"));
+        search.search("deny",1);QTRY_VERIFY(!search.loading());QVERIFY(search.errorText().contains("429"));QVERIFY(!search.errorText().contains("private"));
+        search.search("slow",1);QTRY_VERIFY(!search.loading());QVERIFY(!search.errorText().isEmpty());
+        search.search("public",1);QTRY_VERIFY(!search.loading());QCOMPARE(search.rows().size(),1);QVERIFY(search.errorText().isEmpty());
+        peer.session.stop();QTRY_VERIFY(!peer.store.ready());QVERIFY(search.rows().isEmpty());
+    }
     void messagePresentationGroupsOnlyMatchingAuthorsAndDates() {
         const QDate today(2026,11,13);
         const QDateTime yesterday(today.addDays(-1),QTime(18,0));
