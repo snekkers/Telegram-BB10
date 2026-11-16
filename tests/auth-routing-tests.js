@@ -43,3 +43,13 @@ preview.chooseConnection(); assert.equal(configured, 0);
 preview.previewing = false; preview.chooseConnection(); assert.equal(configured, 0);
 preview.loginActive = true; preview.chooseConnection(); assert.equal(configured, 1);
 console.log('Auth routing passed: saved entry, ready transition, fresh entry, busy guard and inert previews.');
+
+const loadingExpression = fs.readFileSync(path.join(assets, 'main.qml'), 'utf8').match(/property bool restoringSession: ([^\n]+)/)[1];
+const startup = {previewWelcome: false, live: false, authPhase: 'parameters', _telegram: {available: true, hasSavedConfiguration: true, errorText: ''}};
+vm.createContext(startup);
+assert.equal(vm.runInContext(loadingExpression, startup), true);
+startup._telegram.errorText = 'The database could not be opened';
+assert.equal(vm.runInContext(loadingExpression, startup), false, 'A rejected restore must never leave the opening cover spinning');
+startup._telegram.errorText = ''; startup._telegram.available = false;
+assert.equal(vm.runInContext(loadingExpression, startup), false, 'A missing engine must not display an endless opening cover');
+console.log('Startup cover passed: errors and unavailable engines leave loading state.');

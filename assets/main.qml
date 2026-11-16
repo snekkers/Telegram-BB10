@@ -10,7 +10,7 @@ NavigationPane {
     property bool autoConfigAttempted: false
     property bool loginStarted: false
     property bool previewWelcome: false
-    property bool restoringSession: !previewWelcome && !live && _telegram.hasSavedConfiguration && (authPhase==="stopped" || authPhase==="starting" || authPhase==="parameters")
+    property bool restoringSession: !previewWelcome && !live && _telegram.available && _telegram.errorText.length === 0 && _telegram.hasSavedConfiguration && (authPhase==="stopped" || authPhase==="starting" || authPhase==="parameters")
     property string chatCategory: "personal"
     function applyCategory() { _live.setChatCategory(chatCategory); _chat.setChatCategory(chatCategory); }
     property bool archiveView: false
@@ -148,9 +148,10 @@ NavigationPane {
                 ImageView {imageSource: "asset:///icon.png";scalingMethod: ScalingMethod.AspectFit;preferredWidth: ui.du(20);preferredHeight: ui.du(20);horizontalAlignment: HorizontalAlignment.Center;bottomMargin: ui.du(3)}
                 Label {text: "Telegram";textStyle.fontSize: FontSize.PointValue;textStyle.fontSizeValue: 14;textStyle.fontWeight: FontWeight.W600;textStyle.color: Color.Black;horizontalAlignment: HorizontalAlignment.Center}
                 Label {text: navigation.restoringSession?qsTr("Открываем ваши чаты…"):qsTr("Быстрый и безопасный обмен сообщениями.");multiline: true;textStyle.color: Color.Black;textStyle.textAlign: TextAlign.Center;horizontalAlignment: HorizontalAlignment.Fill;topMargin: ui.du(1)}
+                Label {objectName: "startupError";visible: _telegram.errorText.length>0;text: _telegram.errorText;textFormat: TextFormat.Plain;multiline: true;textStyle.color: Color.create("#bc3e36");horizontalAlignment: HorizontalAlignment.Fill;bottomMargin: ui.du(1.5)}
                 Container {layoutProperties: StackLayoutProperties {spaceQuota: 1}}
                 ActivityIndicator {visible: navigation.restoringSession;running: visible;preferredWidth: ui.du(5);preferredHeight: ui.du(5);horizontalAlignment: HorizontalAlignment.Center}
-                Button {objectName: "startMessagingButton";visible: !navigation.restoringSession;text: qsTr("Начать общение");appearance: ControlAppearance.Primary;preferredHeight: ui.du(7.5);horizontalAlignment: HorizontalAlignment.Fill;onClicked: navigation.openLogin()}
+                Button {objectName: "startMessagingButton";visible: !navigation.restoringSession;text: _telegram.errorText.length>0?qsTr("Повторить подключение"):qsTr("Начать общение");appearance: ControlAppearance.Primary;preferredHeight: ui.du(7.5);horizontalAlignment: HorizontalAlignment.Fill;enabled: _telegram.available && !_telegram.busy;onClicked: {if(_telegram.errorText.length>0 && _telegram.hasSavedConfiguration)_telegram.reconnect();else navigation.openLogin()}}
             }
             Container {
                 visible: navigation.live || navigation.demo

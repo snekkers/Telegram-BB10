@@ -79,6 +79,24 @@ private slots:
         session.stop(); QTRY_COMPARE(session.phase(), QString("stopped"));
     }
 
+    void rejectedDatabaseRestoreShowsSafeErrorAndAllowsRetry() {
+        QTemporaryDir directory;
+        QString library=directory.path()+"/libtdjson.so", data=directory.path()+"/private";
+        fixture(library,"database-locked");
+        TelegramSession session(engine(),library,data);
+        session.start();QTRY_COMPARE(session.phase(),QString("parameters"));
+        QVERIFY(session.configureAndRemember("12345",QString(32,'a')));
+        QTRY_VERIFY(!session.busy());QCOMPARE(session.phase(),QString("parameters"));
+        QVERIFY(session.errorText().contains(QString::fromUtf8("другим экземпляром")));
+        QVERIFY(!session.errorText().contains("private-account-path"));
+        QVERIFY(session.hasSavedConfiguration());
+        QFile key(data+"/database.key");QVERIFY(key.open(QIODevice::ReadOnly));const QByteArray original=key.readAll();key.close();
+        QVERIFY(session.useSavedConfiguration());QTRY_COMPARE(session.phase(),QString("phone"));
+        QVERIFY(session.errorText().isEmpty());
+        QVERIFY(key.open(QIODevice::ReadOnly));QCOMPARE(key.readAll(),original);key.close();
+        session.stop();QTRY_COMPARE(session.phase(),QString("stopped"));
+    }
+
     void privateFileRejectsSymlinksAndInvalidJson() {
         QTemporaryDir directory;
         QString path = directory.path() + "/private/settings.json";

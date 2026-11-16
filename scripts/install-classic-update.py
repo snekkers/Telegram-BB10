@@ -18,7 +18,7 @@ with zipfile.ZipFile(bar) as archive:
     fields=dict(line.split(': ',1) for line in manifest.splitlines() if ': ' in line)
     assert fields['Package-Name']=='org.example.berrygram'
     assert fields['Package-Architecture']=='armle-v7'
-    assert fields['Package-Version']=='0.17.0.23'
+    assert fields['Package-Version']=='0.17.1.24'
     app_id=fields['Package-Name']+'.'+fields['Package-Id']
     expected={name:hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist()
         if name.startswith('native/') and not name.endswith('/')}

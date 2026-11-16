@@ -249,7 +249,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.17.0.23");
+    parameters.insert("application_version", "0.17.1.24");
     const bool accepted=authenticate(parameters);
     if(accepted){m_runtimeApiId=apiId.trimmed();m_runtimeApiHash=hash;}
     return accepted;
@@ -431,6 +431,8 @@ void TelegramSession::handle(const QVariantMap &object)
                 m_error = ru("Код истёк. Остановите движок и начните вход заново.");
             else if (message == "PHONE_NUMBER_INVALID")
                 m_error = ru("Telegram не принял номер телефона.");
+            else if (m_phase == "parameters" && (message.contains("Can't lock file", Qt::CaseInsensitive) || message.contains("database is locked", Qt::CaseInsensitive)))
+                m_error = ru("Сохранённый вход занят другим экземпляром Telegram. Закройте приложение и откройте его снова значком.");
             else if (message == "API_ID_INVALID")
                 m_error = ru("Telegram не принял api_id или api_hash.");
             else if (flood.exactMatch(message))

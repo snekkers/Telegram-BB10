@@ -39,12 +39,17 @@ elif scenario == "crash":
 else:
     state("WaitTdlibParameters")
 
+parameter_attempts = 0
 for line in sys.stdin:
     query = json.loads(line)
     kind = query["@type"]
     if kind == "getOption":
         reply(query, "optionValueString", value="1.8.69 · Тест 😀")
     elif kind == "setTdlibParameters":
+        parameter_attempts += 1
+        if scenario == "database-locked" and parameter_attempts == 1:
+            reply(query, "error", code=400, message="Can't lock file /private-account-path/db")
+            continue
         expected_id, expected_hash = (17349, "344583e45741c457fe1862106095a5eb") if scenario == "test-api" else (12345, "a" * 32)
         assert query["api_id"] == expected_id
         assert query["api_hash"] == expected_hash

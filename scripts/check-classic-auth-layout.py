@@ -96,6 +96,15 @@ try:
     print('Checked auth states and wide group/channel messages on Classic; inspect captures separately')
 finally:
     try:
-        if restore_session:step('communities-resume','resume-saved',capture=False)
-        step('communities-checks-disabled','disable-checks',capture=False)
+        # A service-launched instance is not a normal icon launch. Never leave
+        # it holding the account database when handing the phone to its owner.
+        with client.open_sftp() as s:
+            try:s.remove(folder+'/enabled')
+            except FileNotFoundError:pass
+        rows=command('pidin arguments').decode().splitlines()
+        for row in rows:
+            fields=row.split(None,1)
+            if len(fields)==2 and fields[0].isdigit() and fields[1].split()[0]==installed['app_id']:
+                command('kill -TERM '+fields[0])
+        print('Closed service-launched UI check. Open Telegram using its normal icon.')
     finally:client.close()
