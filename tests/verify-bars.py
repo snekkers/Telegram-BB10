@@ -26,7 +26,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.15.0.20" in manifest
+            assert "Package-Version: 0.16.0.21" in manifest
             assert "Entry-Point-Icon: native/assets/icon.png" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1

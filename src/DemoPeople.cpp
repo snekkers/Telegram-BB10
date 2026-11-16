@@ -1,7 +1,7 @@
 #include "ChatController.hpp"
 #include <QMetaObject>
 QString ChatController::currentAvatarKey() const{
-    return m_currentChatId=="demo-anna"?"demo:anna":m_currentChatId=="demo-bb10" || m_currentChatId=="demo-design" || m_currentChatId=="demo-boris"?"demo:classic":"";
+    return m_currentChatId=="demo-anna"?"demo:anna":m_currentChatId=="demo-design"?"demo:channel":m_currentChatId=="demo-project"?"demo:group":m_currentChatId=="demo-bb10" || m_currentChatId=="demo-boris"?"demo:classic":"";
 }
 QString ChatController::currentChatStatus() const{
     if(!m_demoStatus.isEmpty())return m_demoStatus+QString::fromUtf8(" · демо");

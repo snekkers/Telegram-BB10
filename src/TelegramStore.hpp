@@ -122,7 +122,12 @@ public:
     QString connectionStatus() const { return m_connection; }
     QString composerHint() const;
     QString failedDraft() const;
-    QString draftText() const { return m_drafts.value(m_current); }
+    QString draftText() const { return m_drafts.value(draftKey()); }
+    QString composerKey() const {return draftKey();}
+    bool inComments() const { return !m_threadId.isEmpty(); }
+    bool commentsLoading() const { return !m_pendingComment.isEmpty(); }
+    bool openComments(const QString &messageId);
+    bool returnToPost();
     QString currentChatId() const { return m_current; }
     QString searchQuery() const { return m_search; }
     void setDraft(const QString &text);
@@ -213,6 +218,11 @@ private:
     QVariantMap avatarFile(const QString &key) const;
     void pumpAvatars();
     QString chatActivity(const QString &chatId) const;
+    QString draftKey() const { return m_threadId.isEmpty()?m_current:m_current+"/thread/"+m_threadId; }
+    bool threadResponse(const QVariantMap &object,const QVariantMap &pending);
+    bool belongsToThread(const QVariantMap &message) const;
+    void activateThread(const QVariantMap &thread,const QVariantMap &pending);
+    void applyReplyInfo(QVariantMap *row,const QVariantMap &interaction) const;
 
     void suspendLocalSends();
     void restoreChatDraft(const QString &id, const QVariant &remote);
@@ -273,6 +283,7 @@ private:
     unsigned m_actionSerial, m_infoSerial;
     QString m_storageSummary;
     QString m_current, m_error, m_connection, m_seenPhase, m_search, m_chatCategory, m_targetMessage;
+    QString m_threadId,m_threadRoot,m_threadSourceChat,m_threadSourceMessage,m_pendingComment;
     qlonglong m_historyCursor;
     qlonglong m_lastReadSubmitted;
     unsigned m_generation;

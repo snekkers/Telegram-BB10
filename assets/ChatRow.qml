@@ -13,7 +13,7 @@ CustomListItem {
         rightPadding: ui.du(2)
         topPadding: ui.du(1.1)
         bottomPadding: ui.du(1.1)
-        Avatar { title: item.row.title; chatId: item.row.chatId;avatarKey: item.row.avatarKey || "";imageProvider: item.ListItem.view?item.ListItem.view.avatarProvider:null; rightMargin: ui.du(1.8) }
+        Avatar { title: item.row.title; chatId: item.row.chatId;avatarKey: item.row.avatarKey || ((item.row.chatId || "").length>0 && (item.row.chatId || "").indexOf("demo-")!==0?"chat:"+item.row.chatId:"");imageProvider: item.ListItem.view?item.ListItem.view.avatarProvider:null; rightMargin: ui.du(1.8) }
         Container {
             layoutProperties: StackLayoutProperties { spaceQuota: 1 }
             topPadding: ui.du(0.1)

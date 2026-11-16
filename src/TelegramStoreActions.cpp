@@ -83,7 +83,7 @@ void TelegramStore::cancelComposer(){++m_actionSerial;m_composerContext.clear();
 bool TelegramStore::editText(const QString &text){
     if(!canSend() || text.trimmed().isEmpty() || text.size()>4096)return false;
     const QString target=m_composerContext.value("messageId").toString();
-    QVariantMap intent;intent.insert("type","edit");intent.insert("text",text);intent.insert("sourceMessageId",target);
+    QVariantMap intent;intent.insert("threadId",m_threadId);intent.insert("type","edit");intent.insert("text",text);intent.insert("sourceMessageId",target);
     const QString record=m_local.prepare(m_account,m_current,intent);
     if(record.isEmpty() || !m_local.transition(record,"submitting",target)){m_error=m_local.error();emit changed();return false;}
     QVariantMap call=method("editMessageText");call.insert("chat_id",number(m_current));call.insert("message_id",number(target));

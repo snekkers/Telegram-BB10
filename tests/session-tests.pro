@@ -18,3 +18,5 @@ SOURCES += ../src/TelegramPeople.cpp
 SOURCES += ../src/TelegramReactions.cpp
 
 SOURCES += ../src/TelegramTools.cpp
+
+SOURCES += ../src/TelegramThreads.cpp

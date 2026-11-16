@@ -79,7 +79,7 @@ void ChatController::addDemoChat(const QString &id, const QString &title,
     row.insert("unreadLabel", order == 1 ? QString("2") : QString());
     row.insert("pinned",false);row.insert("archived",false);
     row.insert("personal", id!="demo-bb10" && id!="demo-project" && id!="demo-design");
-    row.insert("avatarKey",id=="demo-anna"?"demo:anna":id=="demo-bb10" || id=="demo-design" || id=="demo-boris"?"demo:classic":"");
+    row.insert("avatarKey",id=="demo-anna"?"demo:anna":id=="demo-design"?"demo:channel":id=="demo-project"?"demo:group":id=="demo-bb10" || id=="demo-boris"?"demo:classic":"");
     m_chatRows.append(row);
 
     QVariantList history;

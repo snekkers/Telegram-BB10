@@ -78,8 +78,14 @@ class TelegramController : public QObject {
     Q_PROPERTY(int selectionCount READ selectionCount NOTIFY changed)
     Q_PROPERTY(QVariantMap selectionState READ selectionState NOTIFY changed)
     Q_PROPERTY(QString selectedText READ selectedText NOTIFY changed)
+    Q_PROPERTY(bool inComments READ inComments NOTIFY changed)
+    Q_PROPERTY(bool commentsLoading READ commentsLoading NOTIFY changed)
     Q_PROPERTY(bool composerVisible READ composerVisible NOTIFY changed)
 public:
+    bool inComments() const {return m_store->inComments();}
+    bool commentsLoading() const {return m_store->commentsLoading();}
+    Q_INVOKABLE bool openComments(const QString &id){return m_store->openComments(id);}
+    Q_INVOKABLE bool returnToPost(){return m_store->returnToPost();}
     explicit TelegramController(TelegramStore *store, QObject *parent = 0);
     bb::cascades::DataModel *chats() const { return m_chats; }
     bb::cascades::DataModel *messages() const { return m_messages; }

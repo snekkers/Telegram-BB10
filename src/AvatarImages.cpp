@@ -18,7 +18,8 @@ void AvatarImage::setProvider(QObject *provider){
 }
 void AvatarImage::setKey(const QString &key){if(key==m_key)return;m_key=key;refresh();}
 void AvatarImage::refresh(const QString &changedKey){
-    if(!m_provider || !m_provider->affected(m_key,changedKey))return;
+    if(!m_provider){if(!m_source.isEmpty()){m_source.clear();emit changed();}return;}
+    if(!m_provider->affected(m_key,changedKey))return;
     const QString source=m_key.isEmpty()?QString():m_provider->url(m_key);
     if(m_source!=source){m_source=source;emit changed();}
     if(!m_key.isEmpty())m_provider->request(m_key);

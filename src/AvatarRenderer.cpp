@@ -59,13 +59,19 @@ QString AvatarRenderer::render(const QString &source,const QString &folder){
     return QUrl::fromLocalFile(target).toString();
 }
 QString AvatarRenderer::demo(const QString &key,const QString &folder){
-    if(key!="demo:anna" && key!="demo:classic")return QString();
-    const QString source=QDir(folder).filePath(key=="demo:anna"?"anna-source.png":"classic-source.png");
+    if(key!="demo:anna" && key!="demo:classic" && key!="demo:group" && key!="demo:channel")return QString();
+    const QString source=QDir(folder).filePath(key.mid(5)+"-source.png");
     if(!regular(source,256*1024)){
         QImage sample(160,160,QImage::Format_ARGB32_Premultiplied);sample.fill(0);
         QPainter painter(&sample);QLinearGradient sky(0,0,160,160);sky.setColorAt(0,QColor(key=="demo:anna"?"#f4ac87":"#70adc8"));sky.setColorAt(1,QColor(key=="demo:anna"?"#6478b3":"#244d74"));
         painter.fillRect(0,0,160,160,sky);painter.setRenderHint(QPainter::Antialiasing,true);painter.setPen(Qt::NoPen);painter.setBrush(QColor("#ffe6ae"));painter.drawEllipse(QRectF(103,28,28,28));
-        QPolygonF mountain;mountain<<QPointF(-10,160)<<QPointF(54,58)<<QPointF(112,130)<<QPointF(140,90)<<QPointF(180,160);painter.setBrush(QColor("#37536a"));painter.drawPolygon(mountain);painter.end();
+        QPolygonF mountain;mountain<<QPointF(-10,160)<<QPointF(54,58)<<QPointF(112,130)<<QPointF(140,90)<<QPointF(180,160);painter.setBrush(QColor("#37536a"));painter.drawPolygon(mountain);
+        if(key=="demo:group" || key=="demo:channel"){
+            painter.fillRect(0,0,160,160,QColor(key=="demo:group"?"#458c85":"#7762b0"));painter.setBrush(Qt::white);
+            if(key=="demo:group"){painter.drawEllipse(QRectF(36,43,30,30));painter.drawEllipse(QRectF(94,43,30,30));painter.drawEllipse(QRectF(59,35,42,42));painter.drawRoundedRect(QRectF(23,83,114,40),19,19);}
+            else{QPolygonF speaker;speaker<<QPointF(34,67)<<QPointF(62,67)<<QPointF(110,43)<<QPointF(110,114)<<QPointF(62,91)<<QPointF(34,91);painter.drawPolygon(speaker);painter.drawRoundedRect(QRectF(54,88,17,36),5,5);}
+        }
+        painter.end();
         if(!save(sample,folder,source))return QString();
     }
     return render(source,folder);

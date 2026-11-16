@@ -91,6 +91,60 @@ private:
     }
 
 private slots:
+    void communityAvatarsLoadChangeAndDisappear(){
+        Peer peer;ready(peer);
+        foreach(const QString &id,QStringList()<<A<<C){
+            QVariantMap photo,file=object("file");file.insert("id",id==A?77:78);file.insert("size",68);photo.insert("small",file);
+            QVariantMap event=object("updateChatPhoto");event.insert("photo",photo);update(peer,event,id);
+            peer.store.requestAvatar("chat:"+id);QTRY_VERIFY(!peer.store.avatarPath("chat:"+id).isEmpty());
+        }
+        QVariantMap event=object("updateChatPhoto"),photo,file=object("file");file.insert("id",78);file.insert("size",68);photo.insert("small",file);event.insert("photo",photo);update(peer,event,A);
+        QCOMPARE(peer.store.avatarPath("chat:"+A),peer.store.avatarPath("chat:"+C));
+        event.insert("photo",QVariant());update(peer,event,A);QVERIFY(peer.store.avatarPath("chat:"+A).isEmpty());QVERIFY(!peer.store.avatarPath("chat:"+C).isEmpty());
+    }
+    void commentsUseDiscussionHistoryTopicAndSeparateDrafts(){
+        Peer peer;ready(peer);open(peer);peer.store.setDraft("group draft");peer.store.flushDrafts();
+        QVERIFY(peer.store.openComments("30"));QTRY_VERIFY(peer.store.inComments());QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(!row(peer.store,"320").isEmpty());QVERIFY(row(peer.store,"30").isEmpty());QCOMPARE(peer.store.draftText(),QString());
+        peer.store.setDraft("thread draft");peer.store.flushDrafts();
+        QVariantMap event=object("updateNewMessage"),message=object("message");message.insert("id",999);message.insert("chat_id",A.toLongLong());message.insert("content",content("unrelated"));event.insert("message",message);update(peer,event);
+        QVERIFY(row(peer.store,"999").isEmpty());
+        QVERIFY(peer.store.sendText("comment"));QTRY_VERIFY(!peer.store.sendBusy());QTRY_VERIFY(!row(peer.store,"340").isEmpty());
+        QVariantList actions=control(peer,"stats").value("actions").toList();bool sent=false,read=false;
+        foreach(const QVariant &value,actions){const QVariantMap call=value.toMap();if(call.value("@type")=="sendMessage"){sent=true;QCOMPARE(call.value("topic_id").toMap().value("message_thread_id").toInt(),300);QCOMPARE(call.value("reply_to").toMap().value("message_id").toInt(),300);}if(call.value("@type")=="viewMessages" && call.value("source").toMap().value("@type")=="messageSourceMessageThreadHistory"){read=true;QVERIFY(call.value("message_ids").toList().first().toLongLong()<=330);}}
+        QVERIFY(sent);QVERIFY(read);
+        peer.store.setDraft("unfinished comment");peer.store.flushDrafts();QVERIFY(peer.store.returnToPost());QTRY_VERIFY(!peer.store.loadingHistory());QVERIFY(!peer.store.inComments());QCOMPARE(peer.store.draftText(),QString("group draft"));
+        QVERIFY(peer.store.openComments("30"));QTRY_VERIFY(peer.store.inComments());QCOMPARE(peer.store.draftText(),QString("unfinished comment"));
+    }
+    void commentsHonorReadOnlyPermissionAndDiscardLateThread(){
+        Peer peer;ready(peer);open(peer);control(peer,"readOnlyThread");QVERIFY(peer.store.openComments("30"));QTRY_VERIFY(peer.store.inComments());QVERIFY(!peer.store.canSend());QVERIFY(!peer.store.sendText("blocked"));
+        QCOMPARE(control(peer,"stats").value("send_count").toInt(),0);QVERIFY(peer.store.returnToPost());QTRY_VERIFY(!peer.store.loadingHistory());
+        control(peer,"holdThread");QVERIFY(peer.store.openComments("30"));QTRY_VERIFY(control(peer,"stats").value("actions").toList().last().toMap().value("@type")=="getMessageThread");
+        QVERIFY(peer.store.openChat(B));control(peer,"releaseThread");QVERIFY(!peer.store.inComments());QCOMPARE(peer.store.currentChatId(),B);QVERIFY(!peer.store.commentsLoading());
+    }
+    void channelCommentsHydrateDiscussionAndUpdateCount(){
+        Peer peer;ready(peer);QVariantMap channel=object("chat"),type=object("chatTypeSupergroup");type.insert("is_channel",true);channel.insert("id",C.toLongLong());channel.insert("type",type);channel.insert("title","Channel");peer.store.consume(channel);open(peer,C);QVERIFY(!peer.store.composerVisible());
+        QVariantMap info,reply,event=object("updateMessageInteractionInfo");reply.insert("reply_count",0);info.insert("reply_info",reply);event.insert("interaction_info",info);event.insert("message_id",90);update(peer,event,C);QVERIFY(row(peer.store,"90").value("hasComments").toBool());
+        reply.insert("reply_count",5);info.insert("reply_info",reply);event.insert("interaction_info",info);update(peer,event,C);QCOMPARE(row(peer.store,"90").value("commentCount").toInt(),5);
+        control(peer,"unknownThread");QVERIFY(peer.store.openComments("90"));QTRY_VERIFY(peer.store.inComments());QCOMPARE(peer.store.currentChatId(),QString("-1001234567800"));QVERIFY(peer.store.composerVisible());QVERIFY(peer.store.canSend());
+        QVERIFY(peer.store.returnToPost());QCOMPARE(peer.store.currentChatId(),C);QCOMPARE(peer.store.targetMessageId(),QString("90"));QVERIFY(!peer.store.composerVisible());
+    }
+    void deniedAndTimedOutCommentsAreRetryable(){
+        Peer peer(200);ready(peer);open(peer);QVariantMap event=object("updateNewMessage"),message=object("message");message.insert("id",999);message.insert("chat_id",A.toLongLong());message.insert("content",content("no thread"));event.insert("message",message);update(peer,event);
+        QVERIFY(peer.store.openComments("999"));QTRY_VERIFY(!peer.store.commentsLoading());QVERIFY(!peer.store.inComments());QVERIFY(!peer.store.errorText().isEmpty());
+        control(peer,"holdThread");QVERIFY(peer.store.openComments("30"));QTRY_VERIFY(!peer.store.commentsLoading());QVERIFY(!peer.store.inComments());control(peer,"releaseThread");QVERIFY(!peer.store.inComments());QVERIFY(peer.store.openComments("30"));QTRY_VERIFY(peer.store.inComments());
+    }
+    void threadDraftJournalSurvivesRestartWithoutReplacingMainDraft(){
+        QTemporaryDir dir;LocalOutbox first(dir.path());QVERIFY(first.open());QVERIFY(first.rememberDraft("42",A,"main"));QVERIFY(first.rememberDraft("42",A+"/thread/300","comment"));
+        QVariantMap intent;intent.insert("type","text");intent.insert("text","comment");intent.insert("threadId","300");QVERIFY(!first.prepare("42",A,intent).isEmpty());
+        LocalOutbox restarted(dir.path());QVERIFY(restarted.open());QCOMPARE(restarted.draft("42",A).toString(),QString("main"));QCOMPARE(restarted.draft("42",A+"/thread/300").toString(),QString("comment"));
+        QVERIFY(restarted.latest("42",A,"text",QStringList()<<"draft").isEmpty());QVERIFY(!restarted.latest("42",A,"text",QStringList()<<"draft","300").isEmpty());
+        QVariantMap attachment;attachment.insert("type","attachment");attachment.insert("kind","document");attachment.insert("path",payload(dir.path(),"normal.txt"));attachment.insert("caption","main file");
+        const QString mainFile=restarted.prepare("42",A,attachment);QVERIFY(!mainFile.isEmpty());
+        attachment.insert("threadId","300");attachment.insert("path",payload(dir.path(),"thread.txt"));attachment.insert("caption","thread file");const QString threadFile=restarted.prepare("42",A,attachment);QVERIFY(!threadFile.isEmpty());QVERIFY(mainFile!=threadFile);
+        QVERIFY(restarted.rememberDraft("42",A+"/thread/300","new thread caption"));QCOMPARE(restarted.entry(mainFile).value("caption").toString(),QString("main file"));QCOMPARE(restarted.entry(threadFile).value("caption").toString(),QString("new thread caption"));
+        QVERIFY(restarted.removeDraft("42",A,"300"));QVERIFY(restarted.entry(threadFile).isEmpty());QVERIFY(!restarted.entry(mainFile).isEmpty());
+    }
     void cancelledDownloadsIgnoreOldRepliesAndCanBeRetried(){
         Peer peer;ready(peer);open(peer);QVERIFY(!control(peer,"holdDownload").isEmpty());QVERIFY(peer.store.downloadMedia("20"));
         QCOMPARE(peer.store.downloads().size(),1);QVERIFY(peer.store.downloads().first().toMap().value("active").toBool());

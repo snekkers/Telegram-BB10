@@ -133,7 +133,7 @@ QString TelegramController::newUploadPath(const QString &name)
 void TelegramController::chooseAttachment(const QString &kind)
 {
     if (!m_store->canSendMedia(kind) || m_recording) return;
-    m_pickerChat = m_store->currentChatId(); m_pickerKind = kind;
+    m_pickerChat = m_store->composerKey(); m_pickerKind = kind;
     m_picker.setType(kind == "photo" ? bb::cascades::pickers::FileType::Picture :
         kind == "voice" ? bb::cascades::pickers::FileType::Music :
         (bb::cascades::pickers::FileType::Picture | bb::cascades::pickers::FileType::Document |
@@ -143,7 +143,7 @@ void TelegramController::chooseAttachment(const QString &kind)
 
 void TelegramController::fileSelected(const QStringList &files)
 {
-    if (files.isEmpty() || m_pickerChat != m_store->currentChatId() || !m_store->canSendMedia(m_pickerKind)) return;
+    if (files.isEmpty() || m_pickerChat != m_store->composerKey() || !m_store->canSendMedia(m_pickerKind)) return;
     QFileInfo input(files.first());
     if (!input.isFile() || input.size() <= 0 || input.size() > 50 * 1024 * 1024) {
         m_mediaError = QString::fromUtf8("Выберите непустой файл до 50 МБ."); emit changed(); return;
@@ -183,10 +183,10 @@ void TelegramController::cancelAttachment()
 
 void TelegramController::checkAttachmentChat()
 {
-    if ((!m_store->ready() || m_attachmentChat != m_store->currentChatId()) && !m_attachment.isEmpty()) leaveAttachment();
+    if ((!m_store->ready() || m_attachmentChat != m_store->composerKey()) && !m_attachment.isEmpty()) leaveAttachment();
     if (!m_recording && m_store->ready()) {
         const QVariantMap restored = m_store->attachmentDraft();
-        if (m_attachment != restored) { m_attachment = restored; m_attachmentChat = m_store->currentChatId(); emit changed(); }
+        if (m_attachment != restored) { m_attachment = restored; m_attachmentChat = m_store->composerKey(); emit changed(); }
     }
 }
 
@@ -197,7 +197,7 @@ void TelegramController::toggleRecording()
     cancelAttachment();
     const QString target = newUploadPath("voice.m4a");
     if (target.isEmpty()) { m_mediaError = QString::fromUtf8("Недостаточно места для записи."); emit changed(); return; }
-    m_attachment.insert("path", target); m_attachment.insert("kind", "voice"); m_attachmentChat = m_store->currentChatId();
+    m_attachment.insert("path", target); m_attachment.insert("kind", "voice"); m_attachmentChat = m_store->composerKey();
     m_recorder.setOutputUrl(QUrl::fromLocalFile(target));
     m_recorder.setAudioChannelConfiguration(bb::multimedia::AudioChannelConfiguration::Mono);
     m_recording = true;
@@ -228,7 +228,7 @@ void TelegramController::recordingError()
 bool TelegramController::sendSelected(const QString &caption)
 {
     if (m_attachment.isEmpty()) return m_store->sendText(caption);
-    if (m_recording || m_attachmentChat != m_store->currentChatId()) return false;
+    if (m_recording || m_attachmentChat != m_store->composerKey()) return false;
     const bool sent = m_store->sendAttachment(m_attachment.value("path").toString(), m_attachment.value("kind").toString(),
         caption, m_attachment.value("duration").toInt(), m_attachment.value("width").toInt(), m_attachment.value("height").toInt());
     if (sent) { m_attachment.clear(); m_attachmentChat.clear(); emit changed(); }
@@ -240,7 +240,7 @@ bool TelegramController::scheduleSelected(const QString &caption, const QDateTim
     if(!when.isValid() || when.toTime_t()<=QDateTime::currentDateTime().toTime_t())return false;
     const uint date=when.toTime_t();
     if(m_attachment.isEmpty())return m_store->sendText(caption,date);
-    if(m_recording || m_attachmentChat!=m_store->currentChatId())return false;
+    if(m_recording || m_attachmentChat!=m_store->composerKey())return false;
     const bool sent=m_store->sendAttachment(m_attachment.value("path").toString(),m_attachment.value("kind").toString(),caption,
         m_attachment.value("duration").toInt(),m_attachment.value("width").toInt(),m_attachment.value("height").toInt(),date);
     if(sent){m_attachment.clear();m_attachmentChat.clear();emit changed();}return sent;
@@ -251,7 +251,7 @@ void TelegramController::recoverAttachment()
     if (m_store->failedAttachment().isEmpty()) return;
     leaveAttachment();
     if (!m_store->recoverAttachment()) { m_mediaError = m_store->errorText(); emit changed(); return; }
-    m_attachment = m_store->attachmentDraft(); m_attachmentChat = m_store->currentChatId(); emit changed();
+    m_attachment = m_store->attachmentDraft(); m_attachmentChat = m_store->composerKey(); emit changed();
 }
 
 bool TelegramController::previewAttachment()

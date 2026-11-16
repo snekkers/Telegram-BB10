@@ -25,6 +25,11 @@ held_search = []
 search_calls = []
 hold_next_history = False
 held_history = []
+held_threads = []
+hold_thread = False
+thread_readonly = False
+thread_unknown = False
+thread_draft = None
 held_sends = []
 held_media = []
 sent_count = 0
@@ -141,9 +146,9 @@ for line in sys.stdin:
             ids = [PUBLIC] if kind == "searchPublicChats" else [B] if kind == "searchChats" else [B, A]
             reply(query, "chats", total_count=len(ids), chat_ids=ids)
     elif kind == "getChat":
-        assert query["chat_id"] == PUBLIC
-        value = chat(PUBLIC, "Публичный канал", 0, False)
-        value["type"] = {"@type": "chatTypeSupergroup", "is_channel": True}
+        assert query["chat_id"] in (PUBLIC,-1001234567800)
+        value = chat(query["chat_id"], "Обсуждение" if query["chat_id"] != PUBLIC else "Публичный канал", 0, query["chat_id"] != PUBLIC)
+        value["type"] = {"@type": "chatTypeSupergroup", "is_channel": query["chat_id"] == PUBLIC}
         reply(query, kind="chat", **{k:v for k,v in value.items() if k != "@type"})
     elif kind == "getMessage":
         reply(query, "error", code=404, message="Fixture no longer has the temporary message")
@@ -176,19 +181,22 @@ for line in sys.stdin:
                 send({"@type": "updateNewChat", "chat": row})
             reply(query)
     elif kind in ("openChat", "closeChat"):
-        assert query["chat_id"] in (A, B, C, PUBLIC,420042,420084,420085) and isinstance(query["chat_id"], int)
+        assert query["chat_id"] in (A, B, C, PUBLIC,-1001234567800,420042,420084,420085) and isinstance(query["chat_id"], int)
         reply(query)
     elif kind == "setChatDraftMessage":
-        assert query["chat_id"] in (A, B, C)
+        assert query["chat_id"] in (A, B, C,-1001234567800)
+        if query.get("topic_id"):actions.append(query)
         draft = query["draft_message"]
+        if query.get("topic_id"):thread_draft=draft
         if draft is not None:
             assert draft["content"]["@type"] == "draftMessageContentText"
             assert draft["content"]["text"]["@type"] == "formattedText"
-        send({"@type": "updateChatDraftMessage", "chat_id": query["chat_id"],
+        if not query.get("topic_id"):send({"@type": "updateChatDraftMessage", "chat_id": query["chat_id"],
               "draft_message": draft, "positions": positions(9223372036854775806)})
         reply(query)
     elif kind == "viewMessages":
-        assert query["source"] == {"@type": "messageSourceChatHistory"} and query["force_read"] is True
+        assert query["source"]["@type"] in ("messageSourceChatHistory","messageSourceMessageThreadHistory") and query["force_read"] is True
+        if query["source"]["@type"]=="messageSourceMessageThreadHistory":actions.append(query);reply(query);continue
         assert query["message_ids"]
         send({"@type": "updateChatReadInbox", "chat_id": query["chat_id"],
               "last_read_inbox_message_id": query["message_ids"][-1], "unread_count": 0})
@@ -248,7 +256,7 @@ for line in sys.stdin:
         actions.append(query);assert query["only_if_pending"] is False;reply(query)
     elif kind == "getMessageProperties":
         actions.append(query)
-        reply(query,"messageProperties",can_be_replied=True,can_be_forwarded=query["message_id"]!=999,can_be_edited=query["message_id"]==50,can_be_saved=True,can_be_deleted_only_for_self=query["message_id"]!=999 and not only_all_delete,can_be_deleted_for_all_users=query["message_id"]==50)
+        reply(query,"messageProperties",can_get_message_thread=query["message_id"]!=999,can_be_replied=True,can_be_forwarded=query["message_id"]!=999,can_be_edited=query["message_id"]==50,can_be_saved=True,can_be_deleted_only_for_self=query["message_id"]!=999 and not only_all_delete,can_be_deleted_for_all_users=query["message_id"]==50)
     elif kind == "deleteMessages":
         actions.append(query)
         if query["message_ids"]==[7100]:
@@ -310,6 +318,21 @@ for line in sys.stdin:
         document=message(25,query["chat_id"]);document["content"]={"@type":"messageDocument","caption":{"text":"Файл"},"document":{"file_name":"note.txt","document":media_file()}}
         rows=[photo] if query["filter"]["@type"]=="searchMessagesFilterPhoto" else [document]
         reply(query,"foundChatMessages",total_count=1,messages=rows,next_from_message_id=0)
+    elif kind == "getMessageThread":
+        actions.append(query)
+        if hold_thread:
+            held_threads.append(query)
+        else:
+            cid=-1001234567800 if thread_unknown else A
+            permissions={"@type":"chatPermissions","can_send_basic_messages":not thread_readonly,"can_send_photos":not thread_readonly,"can_send_documents":not thread_readonly,"can_send_voice_notes":not thread_readonly}
+            if not thread_unknown:send({"@type":"updateChatPermissions","chat_id":cid,"permissions":permissions})
+            reply(query,"messageThreadInfo",chat_id=cid,message_thread_id=300,messages=[message(300,cid,"Публикация")],reply_info={"reply_count":2},draft_message=thread_draft)
+    elif kind == "getMessageThreadHistory":
+        actions.append(query)
+        assert query["message_id"]==300 and query["limit"]==50 and "only_local" not in query
+        rows=[] if query["from_message_id"] else [message(330,query["chat_id"],"Комментарий 2"),message(320,query["chat_id"],"Комментарий 1")]
+        for value in rows:value["topic_id"]={"@type":"messageTopicThread","message_thread_id":300}
+        reply(query,"messages",messages=rows,total_count=2)
     elif kind == "getChatHistory":
         if hold_next_history:
             hold_next_history = False
@@ -318,6 +341,16 @@ for line in sys.stdin:
             history(query)
     elif kind == "sendMessage":
         sent_count += 1
+        if query.get("topic_id"):
+            actions.append(query)
+            assert query["chat_id"] in (A,-1001234567800) and query["topic_id"]=={"@type":"messageTopicThread","message_thread_id":300}
+            assert query["reply_to"]["message_id"] in (300,320,330)
+            text=query["input_message_content"]["text"]["text"]
+            if text=="deny":reply(query,"error",code=403,message="thread denied");continue
+            outgoing=message(340,query["chat_id"],text,True)
+            outgoing["topic_id"]=query["topic_id"]
+            reply(query,kind="message",**{k:v for k,v in outgoing.items() if k!="@type"})
+            continue
         assert query["chat_id"] in (A, B) and isinstance(query["chat_id"], int)
         assert query["options"]["paid_message_star_count"] == 0
         body = query["input_message_content"]
@@ -422,7 +455,14 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "holdDownload":
+        if op == "holdThread":hold_thread=True
+        elif op == "releaseThread":
+            hold_thread=False
+            for pending in held_threads:reply(pending,"messageThreadInfo",chat_id=A,message_thread_id=300,messages=[message(300,A)],draft_message=None)
+            held_threads.clear()
+        elif op == "readOnlyThread":thread_readonly=True
+        elif op == "unknownThread":thread_unknown=True
+        elif op == "holdDownload":
             hold_download=True
         elif op == "releaseDownload":
             hold_download=False

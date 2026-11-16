@@ -11,6 +11,14 @@ Page {
     property variant source: liveChat?_live:_chat
     property variant selectionState: source.selectionState
     onSelectionStateChanged: if(revokeDelete && selectionState.state!=="ready")revokeDelete.checked=false
+    property bool inComments: liveChat && _live.inComments
+    property string visibleChatId: liveChat?_live.currentChatId:""
+    onInCommentsChanged: resetComposerForContext()
+    onVisibleChatIdChanged: resetComposerForContext()
+    function resetComposerForContext(){
+        if(!sceneReady || !liveChat || !messageField)return;
+        pendingNewCount=0;messageField.text=_live.draftText;messageField.editor.setCursorPosition(_live.draftCursor);
+    }
     property bool sceneReady: false
     property variant composerContext: liveChat?_live.composerContext:_chat.composerContext
     property string composerKey: ""
@@ -74,6 +82,7 @@ Page {
         if(!_live.loadingHistory && !historyScroll.atEnd && index && index.length>0){var row=messageList.dataModel.data(index);if(row && row.messageId)id=row.messageId;}
         _live.saveViewState(id,messageField.editor.cursorPosition);
     }
+    function openComments(id){if(!liveChat)return;saveViewState();_live.openComments(id);}
     function openReply(chat,id){
         if(!id || id==="0")return;
         if(liveChat){saveViewState();if(_live.openReply(chat,id)){messageField.text=_live.draftText;messageField.editor.setCursorPosition(_live.draftCursor);}}
@@ -124,7 +133,7 @@ Page {
 
     titleBar: AppHeader {
         caption: chatPage.liveChat ? (_live.currentChatTitle || "Telegram") : _chat.currentChatTitle
-        detail: chatPage.liveChat ? _live.currentChatStatus : _chat.currentChatStatus
+        detail: chatPage.inComments?qsTr("Комментарии"):(chatPage.liveChat ? _live.currentChatStatus : _chat.currentChatStatus)
         detailActive: chatPage.liveChat?_live.currentStatusActive:_chat.currentStatusActive
         avatarVisible: true
         avatarKey: chatPage.liveChat?_live.currentAvatarKey:_chat.currentAvatarKey
@@ -206,6 +215,15 @@ Page {
             rightMargin: ui.du(2)
         }
 
+        Button {
+            objectName: "returnToPostButton"
+            visible: chatPage.inComments
+            enabled: !_live.recording
+            text: qsTr("К публикации")
+            horizontalAlignment: HorizontalAlignment.Fill
+            onClicked: {chatPage.saveViewState();_live.returnToPost();}
+        }
+        Label {visible: chatPage.liveChat && _live.commentsLoading;text: qsTr("Открываем комментарии…");leftMargin: ui.du(2);textStyle.color: Color.create(_prefs.secondary)}
         ListView {
             property variant avatarProvider: _avatars
             property variant preferences: _prefs
@@ -236,6 +254,10 @@ Page {
             function openMedia(id) { _live.openMedia(id); }
             function openReply(chat,id){chatPage.openReply(chat,id);}
             function openReactions(id){if(chatPage.liveChat)navigation.openReactions(id);}
+            function openComments(id){chatPage.openComments(id);}
+            property bool inComments: chatPage.inComments
+            property bool groupDiscussions: chatPage.liveChat && _live.chatInfo.group && !_live.chatInfo.channel
+            property bool commentsEnabled: chatPage.liveChat && !chatPage.inComments && !_live.commentsLoading && !_live.recording
             property bool liveReactions: chatPage.liveChat
             function openPhoto(id){navigation.openPhoto(id,chatPage.liveChat);}
             function selectMessage(id,remove){var source=chatPage.liveChat?_live:_chat;if(remove)source.clearSelection();source.toggleSelected(id);if(remove)source.prepareSelection("delete");}
@@ -312,6 +334,7 @@ Page {
                                     ActionItem {title: qsTr("Реакции");enabled: messageItem.ListItem.view.liveReactions;onTriggered: messageItem.ListItem.view.openReactions(ListItemData.messageId)}
                                     ActionItem {title: ListItemData.selected?qsTr("Снять выделение"):qsTr("Выделить");onTriggered: messageItem.ListItem.view.selectMessage(ListItemData.messageId,false)}
                                     ActionItem {title: qsTr("Удалить");onTriggered: messageItem.ListItem.view.selectMessage(ListItemData.messageId,true)}
+                            ActionItem {title: qsTr("Обсуждение");enabled: messageItem.ListItem.view.commentsEnabled && (ListItemData.hasComments===true || messageItem.ListItem.view.groupDiscussions);onTriggered: messageItem.ListItem.view.openComments(ListItemData.messageId)}
                             ActionItem { objectName: "replyAction-"+(ListItemData.messageId || ""); title: qsTr("Ответить"); imageSource: "asset:///icons/reply-white.png"; enabled: messageItem.ListItem.view.canReply && !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"reply") }
                             ActionItem { objectName: "forwardAction-"+(ListItemData.messageId || ""); title: qsTr("Переслать"); imageSource: "asset:///icons/forward-white.png"; enabled: !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"forward") }
                             ActionItem { objectName: "editAction-"+(ListItemData.messageId || ""); title: qsTr("Изменить"); imageSource: "asset:///icons/edit-white.png"; enabled: !messageItem.ListItem.view.editingContext && ListItemData.outgoing===true && ListItemData.textMessage===true; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"edit") }
@@ -370,6 +393,14 @@ Page {
                                 scalingMethod: ScalingMethod.AspectFit
                                 accessibility.name: qsTr("Фото из сообщения")
                                 gestureHandlers: [TapHandler {onTapped: messageItem.ListItem.view.openPhoto(ListItemData.messageId)}]
+                            }
+                            Button {
+                                objectName: "commentsButton-"+(ListItemData.messageId || "")
+                                visible: ListItemData.hasComments===true && !messageItem.ListItem.view.inComments
+                                enabled: messageItem.ListItem.view.commentsEnabled
+                                text: (ListItemData.commentCount || 0)>0?qsTr("Комментарии: ")+ListItemData.commentCount:qsTr("Комментировать")
+                                horizontalAlignment: HorizontalAlignment.Fill
+                                onClicked: messageItem.ListItem.view.openComments(ListItemData.messageId)
                             }
                             Button {
                                 visible: ListItemData.media !== undefined && ListItemData.media.fileId !== undefined

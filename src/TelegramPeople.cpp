@@ -158,7 +158,9 @@ bool TelegramStore::avatarAffected(const QString &key,const QString &changedKey)
         changedKey=="user:"+m_chats.value(key.mid(5)).value("peerId").toString();
 }
 void TelegramStore::rememberAvatar(const QString &key,const QVariantMap &photo){
-    const QVariantMap file=photo.value("small").toMap(),old=m_avatarFiles.value(key);
+    QVariantMap file=photo.value("small").toMap();
+    if(file.value("id").toInt()<=0)file=photo.value("big").toMap();
+    const QVariantMap old=m_avatarFiles.value(key);
     if(file.value("id").toInt()>0)m_avatarFiles.insert(key,file);else m_avatarFiles.remove(key);
     if(old!=m_avatarFiles.value(key))emit avatarChanged(key);
 }

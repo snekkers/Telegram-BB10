@@ -36,7 +36,8 @@ bool LocalOutbox::open()
     for (QVariantMap::const_iterator it = m_entries.constBegin(); it != m_entries.constEnd(); ++it) {
         const QVariantMap item = it.value().toMap();
         if (!QRegExp("[a-f0-9]{32}").exactMatch(it.key()) || !identifier(item.value("accountId").toString()) ||
-            !identifier(item.value("chatId").toString()) || !states.contains(item.value("state").toString()) ||
+            !identifier(item.value("chatId").toString()) ||
+            (!item.value("threadId").toString().isEmpty() && (!identifier(item.value("threadId").toString()) || item.value("threadId").toLongLong()<=0)) || !states.contains(item.value("state").toString()) ||
             (item.value("type") != "text" && item.value("type") != "attachment" && item.value("type")!="edit" && item.value("type")!="forward") ||
             item.value("text").toString().size() > 4096 || item.value("caption").toString().size() > 1024 ||
             (item.value("type") == "attachment" && !relativePath(item.value("relativePath").toString())) ||
@@ -46,7 +47,7 @@ bool LocalOutbox::open()
         }
     }
     for (QVariantMap::const_iterator it = m_drafts.constBegin(); it != m_drafts.constEnd(); ++it)
-        if (!QRegExp("[0-9]{1,20}:-?[0-9]{1,20}").exactMatch(it.key()) || it.value().toString().size() > 4096) return false;
+        if (!QRegExp("[0-9]{1,20}:-?[0-9]{1,20}(/thread/[1-9][0-9]{0,19})?").exactMatch(it.key()) || it.value().toString().size() > 4096) return false;
     m_valid = true;
     QVariantMap restored = m_entries;
     for (QVariantMap::iterator it = restored.begin(); it != restored.end(); ++it) {
@@ -83,13 +84,13 @@ QString LocalOutbox::path(const QVariantMap &item) const
         file.canonicalFilePath().startsWith(boundary + "/") ? file.canonicalFilePath() : QString();
 }
 
-QVariantMap LocalOutbox::latest(const QString &account, const QString &chat, const QString &type, const QStringList &states) const
+QVariantMap LocalOutbox::latest(const QString &account, const QString &chat, const QString &type, const QStringList &states, const QString &threadId) const
 {
     QVariantMap result;
     if (!healthy() || account.isEmpty() || chat.isEmpty()) return result;
     for (QVariantMap::const_iterator it = m_entries.constBegin(); it != m_entries.constEnd(); ++it) {
         QVariantMap item = it.value().toMap();
-        if (item.value("accountId") != account || item.value("chatId") != chat || item.value("type") != type || !states.contains(item.value("state").toString())) continue;
+        if (item.value("accountId") != account || item.value("chatId") != chat || item.value("type") != type || item.value("threadId").toString() != threadId || !states.contains(item.value("state").toString())) continue;
         if (!result.isEmpty() && item.value("sequence").toLongLong() < result.value("sequence").toLongLong()) continue;
         item.insert("recordId", it.key());
         if (type == "attachment") { item.insert("path", path(item)); item.insert("name", QFileInfo(item.value("relativePath").toString()).fileName()); }
@@ -120,7 +121,7 @@ QString LocalOutbox::prepare(const QString &account, const QString &chat, const 
         item.insert("relativePath", QDir(root).relativeFilePath(source));
         if (path(item).isEmpty()) return QString();
     }
-    const QVariantMap oldDraft = latest(account, chat, item.value("type").toString(), QStringList() << "draft");
+    const QVariantMap oldDraft = latest(account, chat, item.value("type").toString(), QStringList() << "draft", item.value("threadId").toString());
     QString id = oldDraft.value("recordId").toString();
     if (id.isEmpty()) id = QUuid::createUuid().toString().remove('{').remove('}').remove('-');
     qlonglong sequence = 0;
@@ -133,7 +134,7 @@ QString LocalOutbox::prepare(const QString &account, const QString &chat, const 
     foreach (const QString &oldId, changed.keys()) {
         const QVariantMap previous = changed.value(oldId).toMap();
         if (previous.value("state") == "failed" && previous.value("accountId") == account && previous.value("chatId") == chat &&
-            previous.value("type") == item.value("type") &&
+            previous.value("type") == item.value("type") && previous.value("threadId")==item.value("threadId") &&
             (item.value("type") == "attachment" ? previous.value("relativePath") == item.value("relativePath") : previous.value("text") == item.value("text")))
             changed.remove(oldId);
     }
@@ -160,7 +161,7 @@ bool LocalOutbox::rememberDraft(const QString &account, const QString &chat, con
     if (!healthy() || account.isEmpty() || chat.isEmpty() || text.size() > 4096) return false;
     QVariantMap changed = m_drafts; changed.insert(key(account, chat), text);
     QVariantMap entries = m_entries;
-    const QVariantMap attachment = latest(account, chat, "attachment", QStringList() << "draft");
+    const QVariantMap attachment = latest(account, chat.section("/thread/",0,0), "attachment", QStringList() << "draft", chat.section("/thread/",1,1));
     if (!attachment.isEmpty() && text.size() <= 1024) {
         QVariantMap item = entry(attachment.value("recordId").toString()); item.insert("caption", text);
         entries.insert(attachment.value("recordId").toString(), item);
@@ -193,9 +194,9 @@ void LocalOutbox::removePayload(const QString &relative)
     if (!file.isEmpty() && QFile::remove(file)) QDir().rmdir(QFileInfo(file).absolutePath());
 }
 
-bool LocalOutbox::removeDraft(const QString &account, const QString &chat)
+bool LocalOutbox::removeDraft(const QString &account, const QString &chat, const QString &threadId)
 {
-    const QVariantMap item = latest(account, chat, "attachment", QStringList() << "draft");
+    const QVariantMap item = latest(account, chat, "attachment", QStringList() << "draft", threadId);
     if (item.isEmpty()) return true;
     QVariantMap changed = m_entries; changed.remove(item.value("recordId").toString());
     if (!save(changed, m_drafts)) return false;

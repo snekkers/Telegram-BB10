@@ -11,14 +11,14 @@ public:
     bool healthy() const { return m_open && m_valid; }
     QString error() const { return m_error; }
     QVariantMap entry(const QString &id) const { return m_entries.value(id).toMap(); }
-    QVariantMap latest(const QString &account, const QString &chat, const QString &type, const QStringList &states) const;
+    QVariantMap latest(const QString &account, const QString &chat, const QString &type, const QStringList &states, const QString &threadId = QString()) const;
     QVariantList entries(const QString &account) const;
     QString prepare(const QString &account, const QString &chat, const QVariantMap &values);
     bool transition(const QString &id, const QString &state, const QString &messageId = QString());
     bool rememberDraft(const QString &account, const QString &chat, const QString &text);
     bool acknowledgeDraft(const QString &account, const QString &chat, const QString &text);
     QVariant draft(const QString &account, const QString &chat) const;
-    bool removeDraft(const QString &account, const QString &chat);
+    bool removeDraft(const QString &account, const QString &chat, const QString &threadId = QString());
     int cleanup(qlonglong now = 0, int minimumAgeSeconds = 86400);
     QString path(const QVariantMap &entry) const;
     QString summary() const;

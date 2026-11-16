@@ -85,3 +85,5 @@ device: VOICE_PREFIX = $$PWD/build/device/voice-codecs
 simulator: VOICE_PREFIX = $$PWD/build/simulator/voice-codecs
 INCLUDEPATH += $$VOICE_PREFIX/include $$VOICE_PREFIX/include/opus
 LIBS += -L$$VOICE_PREFIX/lib -lopusfile -lopus -logg -lm
+
+SOURCES += $$PWD/src/TelegramThreads.cpp
