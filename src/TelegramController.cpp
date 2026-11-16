@@ -204,6 +204,17 @@ bool TelegramController::sendSelected(const QString &caption)
     return sent;
 }
 
+bool TelegramController::scheduleSelected(const QString &caption, const QDateTime &when)
+{
+    if(!when.isValid() || when.toTime_t()<=QDateTime::currentDateTime().toTime_t())return false;
+    const uint date=when.toTime_t();
+    if(m_attachment.isEmpty())return m_store->sendText(caption,date);
+    if(m_recording || m_attachmentChat!=m_store->currentChatId())return false;
+    const bool sent=m_store->sendAttachment(m_attachment.value("path").toString(),m_attachment.value("kind").toString(),caption,
+        m_attachment.value("duration").toInt(),m_attachment.value("width").toInt(),m_attachment.value("height").toInt(),date);
+    if(sent){m_attachment.clear();m_attachmentChat.clear();emit changed();}return sent;
+}
+
 void TelegramController::recoverAttachment()
 {
     if (m_store->failedAttachment().isEmpty()) return;

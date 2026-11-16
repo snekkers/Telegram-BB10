@@ -39,6 +39,10 @@ try:
  step('features-list','demo-list');memory('cold')
  step('features-notice','notification-test');step('features-notice-clear','notification-clear')
  step('features-chat','demo-chat');step('features-compose','compose',text='Привет ')
+ reactions=step('features-reactions','feature-preview',feature='reactions');assert reactions['page']=='reactionPage'
+ step('features-reactions-back','back')
+ schedule=step('features-schedule','feature-preview',feature='schedule');assert schedule['page']=='schedulePage'
+ step('features-schedule-back','back')
  picker=step('features-picker','emoji-picker');assert picker['page']=='emojiPage' and picker['emoji_count']==30
  picked=step('features-picked','emoji-pick',index=0);assert picked['page']=='chatPage' and picked['composer_focused'] and len(picked['draft'])>len('Привет ')
  step('features-picker-recent','emoji-picker');recent=step('features-recents','emoji-category',index=0);assert recent['emoji_count']>=1

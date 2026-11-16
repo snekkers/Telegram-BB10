@@ -7,6 +7,7 @@
 #include <bb/multimedia/AudioRecorder>
 #include <QTimer>
 #include <QPointer>
+#include <QDateTime>
 
 class TelegramController : public QObject {
     Q_OBJECT
@@ -44,6 +45,8 @@ class TelegramController : public QObject {
     Q_PROPERTY(int targetMessageIndex READ targetMessageIndex NOTIFY changed)
     Q_PROPERTY(QString targetMessageId READ targetMessageId NOTIFY changed)
     Q_PROPERTY(bool archiveView READ archiveView NOTIFY changed)
+    Q_PROPERTY(QVariantMap reactionState READ reactionState NOTIFY changed)
+    Q_PROPERTY(QVariantMap pinnedMessage READ pinnedMessage NOTIFY changed)
     Q_PROPERTY(QVariantMap composerContext READ composerContext NOTIFY changed)
     Q_PROPERTY(QVariantMap forwardSelection READ forwardSelection NOTIFY changed)
     Q_PROPERTY(QVariantMap chatInfo READ chatInfo NOTIFY changed)
@@ -104,6 +107,13 @@ public:
     Q_INVOKABLE void setArchiveView(bool value) { m_store->setArchiveView(value); }
     Q_INVOKABLE bool setPinned(const QString &id,bool value) { return m_store->setPinned(id,value); }
     Q_INVOKABLE bool setArchived(const QString &id,bool value) { return m_store->setArchived(id,value); }
+    QVariantMap reactionState() const{return m_store->reactionState();}
+    Q_INVOKABLE bool beginReactions(const QString &id){return m_store->beginReactions(id);}
+    Q_INVOKABLE bool chooseReaction(const QString &emoji){return m_store->chooseReaction(emoji);}
+    Q_INVOKABLE bool loadReactors(bool more){return m_store->loadReactors(more);}
+    Q_INVOKABLE void cancelReactions(){m_store->cancelReactions();}
+    QVariantMap pinnedMessage() const{return m_store->pinnedMessage();}
+    Q_INVOKABLE void refreshPinned(){m_store->refreshPinned();}
     QVariantMap composerContext() const { return m_store->composerContext(); }
     QVariantMap forwardSelection() const { return m_store->forwardSelection(); }
     QVariantMap chatInfo() const { return m_store->chatInfo(); }
@@ -177,6 +187,7 @@ public:
     Q_INVOKABLE void cancelAttachment();
     Q_INVOKABLE void toggleRecording();
     Q_INVOKABLE bool sendSelected(const QString &caption);
+    Q_INVOKABLE bool scheduleSelected(const QString &caption, const QDateTime &when);
     Q_INVOKABLE void recoverAttachment();
     Q_INVOKABLE bool previewAttachment();
 signals:

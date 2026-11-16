@@ -163,6 +163,9 @@ void UiTools::checkRequest()
                 if(field=="dark" || field=="preview" || field=="enter"){
                     CheckBox *check=page->findChild<CheckBox*>(field=="dark"?"darkSetting":field=="preview"?"previewSetting":"enterSetting");if(check){check->setChecked(request.value("value").toBool());ok=true;}
                 }else if(field=="font"){DropDown *drop=page->findChild<DropDown*>("fontSetting");if(drop){drop->setSelectedIndex(qBound(0,request.value("value").toInt(),2));ok=true;}}
+            }else if(action=="feature-preview"){
+                const QString feature=request.value("feature").toString();
+                if(feature=="schedule" || feature=="reactions")ok=QMetaObject::invokeMethod(navigation,"previewFeature",Q_ARG(QVariant,QVariant(feature)));
             }else if(action=="emoji-picker"){
                 ImageButton *button=page->findChild<ImageButton*>("emojiButton");ok=button && QMetaObject::invokeMethod(button,"clicked");
             }else if(action=="emoji-pick"){
@@ -277,6 +280,7 @@ void UiTools::finishCheck()
     const bool demoPage=navigation && navigation->top() && !m_live->ready() &&
         navigation->property("demo").toBool() && (navigation->count()==1 ||
         navigation->top()->objectName()=="settingsPage" || navigation->top()->objectName()=="emojiPage" || navigation->top()->objectName()=="photoPage" ||
+        navigation->top()->objectName()=="reactionPage" || navigation->top()->objectName()=="schedulePage" ||
         navigation->top()->objectName()=="searchPage" ||
         navigation->top()->objectName()=="contactsPage" ||
         navigation->top()->objectName()=="chatInfoPage" || navigation->top()->objectName()=="forwardPage" ||

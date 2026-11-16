@@ -24,6 +24,9 @@ NavigationPane {
         var page=forwardPageDefinition.createObject();if(page){page.liveChat=isLive;navigation.push(page);}
     }
     onCreationCompleted: applyCategory()
+    function openReactions(id){if(!_live.beginReactions(id))return;var page=reactionPageDefinition.createObject();if(page)navigation.push(page);else _live.cancelReactions();}
+    function openSchedule(target){var page=schedulePageDefinition.createObject();if(page){page.chosen.connect(function(when){if(target.scheduleDraft(when))navigation.pop();});navigation.push(page);}}
+    function previewFeature(name){if(!demo || _live.ready)return;var page=name==="schedule"?schedulePageDefinition.createObject():reactionPageDefinition.createObject();if(page)navigation.push(page);}
     function openSettings(){var page=settingsPageDefinition.createObject();if(page)navigation.push(page);}
     function openEmoji(target) {
         var page=emojiPageDefinition.createObject();if(page){page.picked.connect(function(symbol){target.insertEmoji(symbol);});navigation.push(page);}
@@ -161,7 +164,7 @@ NavigationPane {
             }
         }
     }
-    attachedObjects: [ ComponentDefinition {id: settingsPageDefinition;source: "SettingsPage.qml"}, ComponentDefinition {id: emojiPageDefinition;source: "EmojiPage.qml"}, ComponentDefinition {id: photoPageDefinition;source: "PhotoPage.qml"}, ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" }, ComponentDefinition { id: infoPageDefinition; source: "ChatInfoPage.qml" }, ComponentDefinition { id: forwardPageDefinition; source: "ForwardPage.qml" }, ComponentDefinition {id: contactsPageDefinition;source: "ContactsPage.qml"} ]
+    attachedObjects: [ ComponentDefinition {id: schedulePageDefinition;source: "SchedulePage.qml"}, ComponentDefinition {id: reactionPageDefinition;source: "ReactionPage.qml"}, ComponentDefinition {id: settingsPageDefinition;source: "SettingsPage.qml"}, ComponentDefinition {id: emojiPageDefinition;source: "EmojiPage.qml"}, ComponentDefinition {id: photoPageDefinition;source: "PhotoPage.qml"}, ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" }, ComponentDefinition { id: infoPageDefinition; source: "ChatInfoPage.qml" }, ComponentDefinition { id: forwardPageDefinition; source: "ForwardPage.qml" }, ComponentDefinition {id: contactsPageDefinition;source: "ContactsPage.qml"} ]
     onPushTransitionEnded: {
         if ((page.objectName === "chatPage" || page.objectName === "searchPage" || page.objectName === "contactsPage") && page.focusComposer !== undefined) page.focusComposer();
     }
@@ -172,6 +175,7 @@ NavigationPane {
         if (page.objectName === "forwardPage") (page.liveChat?_live:_chat).setRecipientQuery("");
         if(page.objectName==="emojiPage"){_emoji.release();if(navigation.top && navigation.top.objectName==="chatPage")navigation.top.focusAfterEmoji();}
         if(page.objectName==="photoPage")_media.closePhoto();
+        if(page.objectName==="reactionPage")_live.cancelReactions();
         page.destroy();
     }
 }

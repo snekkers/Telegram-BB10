@@ -14,6 +14,8 @@ PUBLIC = -1001234567899
 archive_loaded = False
 actions = []
 only_all_delete = False
+pinned_enabled = False
+reaction_chosen = False
 forward_race = False
 people_calls=[]
 held_contact_open=[]
@@ -205,6 +207,24 @@ for line in sys.stdin:
         reply(query, kind="file", **{k: v for k, v in value.items() if k != "@type"})
     elif kind == "fixtureOnlyAllDelete":
         only_all_delete=True;reply(query)
+    elif kind == "getMessageAvailableReactions":
+        reaction={"@type":"availableReaction","type":{"@type":"reactionTypeEmoji","emoji":"👍"},"needs_premium":False}
+        premium={"@type":"availableReaction","type":{"@type":"reactionTypeEmoji","emoji":"❤️"},"needs_premium":True}
+        reply(query,"availableReactions",top_reactions=[reaction,premium],recent_reactions=[reaction],popular_reactions=[],allow_custom_emoji=False,are_tags=False)
+    elif kind in ("addMessageReaction","removeMessageReaction"):
+        assert query["chat_id"]==A and query["message_id"]==30 and query["reaction_type"]=={"@type":"reactionTypeEmoji","emoji":"👍"}
+        reaction_chosen=kind=="addMessageReaction";actions.append(query)
+        reaction={"@type":"messageReaction","type":{"@type":"reactionTypeEmoji","emoji":"👍"},"total_count":1 if reaction_chosen else 0,"is_chosen":reaction_chosen}
+        info={"@type":"messageInteractionInfo","reactions":{"@type":"messageReactions","reactions":[reaction] if reaction_chosen else [],"can_get_added_reactions":True}}
+        send({"@type":"updateMessageInteractionInfo","chat_id":A,"message_id":30,"interaction_info":info});reply(query)
+    elif kind == "getMessageAddedReactions":
+        assert query["reaction_type"] is None and query["limit"]==50
+        sender={"@type":"messageSenderUser","user_id":42};reaction={"@type":"addedReaction","sender_id":sender,"type":{"@type":"reactionTypeEmoji","emoji":"👍"}}
+        reply(query,"addedReactions",total_count=1,reactions=[reaction],next_offset="")
+    elif kind == "getChatPinnedMessage":
+        if pinned_enabled and query["chat_id"] == A:
+            value=message(30,A,"Pinned fixture");reply(query,"message",**{k:v for k,v in value.items() if k!="@type"})
+        else:reply(query,"error",code=404,message="No pinned message")
     elif kind == "getStorageStatistics":
         assert query["chat_limit"] == 0
         rows=[{"@type":"storageStatisticsByFileType","file_type":{"@type":"fileTypePhoto"},"size":2097152,"count":2},{"@type":"storageStatisticsByFileType","file_type":{"@type":"fileTypeDocument"},"size":1048576,"count":1}]
@@ -339,6 +359,20 @@ for line in sys.stdin:
         assert body["clear_draft"] is False
         text = body["text"]["text"]
         last_send = (query, text)
+        if query["options"].get("scheduling_state"):
+            schedule = query["options"]["scheduling_state"]
+            assert schedule["@type"] == "messageSchedulingStateSendAtDate" and schedule["send_date"] > int(time.time()) and schedule["repeat_period"] == 0
+            actions.append(query)
+            if text == "scheduled-deny":
+                reply(query, "error", code=403, message="fixture scheduling rejected")
+            else:
+                pending = message(7000, query["chat_id"], text, True, {"@type": "messageSendingStatePending"})
+                pending["scheduling_state"] = schedule
+                reply(query, kind="message", **{k:v for k,v in pending.items() if k!="@type"})
+                scheduled = message(7001, query["chat_id"], text, True)
+                scheduled["scheduling_state"] = schedule
+                send({"@type":"updateMessageSendSucceeded", "old_message_id":7000, "message":scheduled})
+            continue
         if text == "deny":
             reply(query, "error", code=403, message="private server diagnostic")
         elif text == "timeout":
@@ -364,7 +398,11 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "holdContact":
+        if op == "pinFixture":
+            pinned_enabled=True
+        elif op == "unpinFixture":
+            pinned_enabled=False
+        elif op == "holdContact":
             hold_contact=True
         elif op == "releaseContact":
             for request,value in held_contact_open:reply(request,kind="chat",**{k:v for k,v in value.items() if k!="@type"})

@@ -91,6 +91,38 @@ private:
     }
 
 private slots:
+    void scheduledSendStaysOutOfHistoryAndRetainsRejectedDraft(){
+        Peer peer;ready(peer);open(peer);
+        const uint now=QDateTime::currentDateTime().toTime_t();
+        QVERIFY(!peer.store.sendText("invalid",now-1));
+        QVERIFY(!peer.store.sendText("too far",now+367U*86400U));
+        QVERIFY(peer.store.sendText("scheduled fixture",now+3600));
+        QTRY_VERIFY(!peer.store.sendBusy());
+        QTRY_VERIFY(peer.store.errorText().contains(QString::fromUtf8("запланировано")));
+        QVERIFY(row(peer.store,"7000").isEmpty());QVERIFY(row(peer.store,"7001").isEmpty());
+        QVERIFY(peer.store.sendText("scheduled-deny",now+3600));
+        QTRY_VERIFY(!peer.store.sendBusy());
+        QTRY_COMPARE(peer.store.failedDraft(),QString("scheduled-deny"));
+    }
+    void reactionsRespectAvailabilityAndShowWhoReacted(){
+        Peer peer;ready(peer);peer.store.loadContacts();QTRY_VERIFY(!peer.store.contactsLoading());open(peer);
+        QVERIFY(peer.store.beginReactions("30"));QTRY_COMPARE(peer.store.reactionState().value("state").toString(),QString("ready"));
+        QCOMPARE(peer.store.reactionState().value("options").toList().size(),2);QVERIFY(!peer.store.chooseReaction(QString::fromUtf8("❤️")));QVERIFY(!peer.store.chooseReaction(QString::fromUtf8("🔥")));
+        QVERIFY(peer.store.chooseReaction(QString::fromUtf8("👍")));QTRY_COMPARE(peer.store.reactionState().value("state").toString(),QString("ready"));
+        QTRY_VERIFY(row(peer.store,"30").value("reactionDisplay").toString().contains(QString::fromUtf8("👍 1")));
+        QVERIFY(peer.store.reactionState().value("options").toList().first().toMap().value("chosen").toBool());
+        QVERIFY(peer.store.loadReactors(false));QTRY_VERIFY(!peer.store.reactionState().value("peopleLoading").toBool());QVERIFY(peer.store.reactionState().value("names").toString().contains(QString::fromUtf8("Анна")));
+        QVERIFY(peer.store.chooseReaction(QString::fromUtf8("👍")));QTRY_VERIFY(row(peer.store,"30").value("reactionDisplay").toString().isEmpty());
+        peer.store.cancelReactions();QVERIFY(peer.store.reactionState().isEmpty());
+    }
+    void pinnedMessagesTrackUpdatesAndChatSwitches(){
+        Peer peer;ready(peer);QVERIFY(!control(peer,"pinFixture").isEmpty());open(peer,A);
+        QTRY_COMPARE(peer.store.pinnedMessage().value("messageId").toString(),QString("30"));
+        QCOMPARE(peer.store.pinnedMessage().value("preview").toString(),QString("Pinned fixture"));
+        open(peer,B);QTRY_VERIFY(peer.store.pinnedMessage().isEmpty());
+        open(peer,A);QTRY_COMPARE(peer.store.pinnedMessage().value("messageId").toString(),QString("30"));
+        QVERIFY(!control(peer,"unpinFixture").isEmpty());QVariantMap event=object("updateMessageIsPinned");event.insert("chat_id",A.toLongLong());event.insert("message_id",30);event.insert("is_pinned",false);update(peer,event);QTRY_VERIFY(peer.store.pinnedMessage().isEmpty());
+    }
     void burstOfMessagesKeepsHistoryConsistent(){
         Peer peer;ready(peer);open(peer);QElapsedTimer timer;timer.start();
         for(int id=10000;id<10300;++id){QVariantMap event=object("updateNewMessage"),message=object("message");message.insert("chat_id",A.toLongLong());message.insert("id",id);message.insert("date",1700000000+id);message.insert("content",content(QString::fromUtf8("Проверка 😀")));event.insert("message",message);peer.store.consume(event);}

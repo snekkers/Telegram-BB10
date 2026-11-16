@@ -210,6 +210,7 @@ bool TelegramStore::setNotifications(bool enabled){
     m_requests[request].insert("settings",settings);return true;
 }
 bool TelegramStore::actionResponse(const QVariantMap &object,const QVariantMap &pending){
+    if(reactionResponse(object,pending))return true;
     const QString kind=pending.value("kind").toString(),type=object.value("@type").toString(),chat=pending.value("chatId").toString();
     const bool current=chat==m_current && pending.value("generation").toUInt()==m_generation,error=type=="error";
     if(kind=="media-properties"){

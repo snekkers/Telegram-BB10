@@ -62,6 +62,13 @@ public:
     bool prepareSelection(const QString &action);
     bool deleteSelected(bool revoke);
 
+    QVariantMap reactionState() const{return m_reactionState;}
+    bool beginReactions(const QString &id);
+    bool chooseReaction(const QString &emoji);
+    bool loadReactors(bool more=false);
+    void cancelReactions();
+    QVariantMap pinnedMessage() const{return m_pinnedMessage;}
+    void refreshPinned();
     QVariantMap chatInfo() const;
     QVariantList infoRows() const { return m_infoRows; }
     bool infoLoading() const { return m_infoLoading; }
@@ -91,7 +98,7 @@ public:
     void refreshStorage();
     int cleanupUploads();
     bool sendAttachment(const QString &path, const QString &kind, const QString &caption,
-                        int duration = 0, int width = 0, int height = 0);
+                        int duration = 0, int width = 0, int height = 0, uint scheduledAt = 0);
     bool sendBusy() const;
     QString currentChatTitle() const;
     QString errorText() const { return m_error; }
@@ -121,7 +128,7 @@ public:
     bool canLoadRecipientChats() const { return m_ready && !m_loadingChats && (!m_chatsEnd || !m_archiveEnd); }
     void loadMoreRecipientChats();
     void loadMoreHistory();
-    bool sendText(const QString &text);
+    bool sendText(const QString &text, uint scheduledAt = 0);
     QString takeFailedDraft();
 
 signals:
@@ -163,12 +170,14 @@ private:
     void history(bool initial);
     void loadChats(bool archive);
     void response(const QVariantMap &object, const QVariantMap &request);
-    bool sendContent(const QVariantMap &content, const QString &text, const QVariantMap &attachment = QVariantMap());
+    bool sendContent(const QVariantMap &content, const QString &text, const QVariantMap &attachment = QVariantMap(), uint scheduledAt = 0);
     bool editText(const QString &text);
     void applyMessageAction(const QString &messageId, const QString &action);
     void updateInfoRows();
     void updateForwardStatus();
     bool actionResponse(const QVariantMap &object, const QVariantMap &pending);
+    bool reactionResponse(const QVariantMap &object,const QVariantMap &pending);
+    void updateReactionNames();
     bool peopleResponse(const QVariantMap &object,const QVariantMap &pending);
     bool peopleUpdate(const QVariantMap &object);
     void upsertUser(const QVariantMap &user);
@@ -217,7 +226,9 @@ private:
     QSet<int> m_avatarQueued;
     QMap<int,qlonglong> m_avatarActive,m_avatarFailed;
     qlonglong m_nextPresenceRefresh;
-    QVariantMap m_composerContext, m_forward, m_info;
+    QVariantMap m_composerContext, m_forward, m_info, m_pinnedMessage, m_reactionState;
+    unsigned m_reactionSerial;
+    unsigned m_pinnedSerial;
     QVariantList m_infoRows, m_members, m_shared;
     QString m_infoError, m_infoCursor;
     int m_infoSection, m_memberOffset;

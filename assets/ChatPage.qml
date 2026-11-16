@@ -81,6 +81,12 @@ Page {
     }
     function focusAfterEmoji(){if(composerVisible)messageField.requestFocus();}
     function insertEmoji(symbol){messageField.editor.insertPlainText(symbol);messageField.requestFocus();}
+    function scheduleDraft(when) {
+        if(!liveChat || !_live.canSendSelected || composerContext.mode==="edit")return false;
+        if(messageField.text.trim().length===0 && _live.attachmentName.length===0)return false;
+        if(!_live.scheduleSelected(messageField.text,when))return false;
+        messageField.text="";return true;
+    }
     function submitDraft() {
         if (messageField.text.trim().length === 0 && (!liveChat || _live.attachmentName.length === 0)) return;
         if (liveChat && !_live.canSendSelected) return;
@@ -127,6 +133,7 @@ Page {
         onMenuRequested: _ui.openMenu(chatPage)
     }
     actions: [
+        ActionItem {objectName: "scheduleAction";title: qsTr("Отложить отправку");imageSource: "asset:///icons/history-white.png";enabled: chatPage.liveChat && chatPage.composerContext.mode!=="edit" && _live.canSendSelected;onTriggered: navigation.openSchedule(chatPage)},
         ActionItem {objectName: "demoPhotoAction";title: qsTr("Просмотр фото · демо");enabled: !chatPage.liveChat;onTriggered: navigation.openPhoto("demo-photo-0",false)},
         ActionItem { objectName: "chatInfoAction"; title: qsTr("Сведения о чате"); imageSource: "asset:///icons/info-white.png"; onTriggered: navigation.openChatInfo(chatPage.liveChat) },
         ActionItem { title: qsTr("Документ"); imageSource: "asset:///icons/attach-white.png"; enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("document") },
@@ -168,6 +175,13 @@ Page {
         verticalAlignment: VerticalAlignment.Fill
         attachedObjects: [ LayoutUpdateHandler { onLayoutFrameChanged: chatContent.measuredHeight = layoutFrame.height } ]
 
+        Button {
+            objectName: "pinnedMessageButton"
+            visible: chatPage.liveChat && (_live.pinnedMessage.messageId || "").length>0
+            horizontalAlignment: HorizontalAlignment.Fill
+            text: qsTr("Закреплено: ")+(_live.pinnedMessage.preview || qsTr("Сообщение"))
+            onClicked: chatPage.openReply("",_live.pinnedMessage.messageId)
+        }
         Label {
             visible: chatPage.liveChat && _live.loadingHistory
             text: qsTr("Загрузка истории…")
@@ -218,6 +232,8 @@ Page {
             function downloadMedia(id) { _live.downloadMedia(id); }
             function openMedia(id) { _live.openMedia(id); }
             function openReply(chat,id){chatPage.openReply(chat,id);}
+            function openReactions(id){if(chatPage.liveChat)navigation.openReactions(id);}
+            property bool liveReactions: chatPage.liveChat
             function openPhoto(id){navigation.openPhoto(id,chatPage.liveChat);}
             function selectMessage(id,remove){var source=chatPage.liveChat?_live:_chat;if(remove)source.clearSelection();source.toggleSelected(id);if(remove)source.prepareSelection("delete");}
             function copyText(text) { _ui.copyText(text); }
@@ -290,6 +306,7 @@ Page {
                             contextActions: [
                                 ActionSet {
                                     title: qsTr("Сообщение")
+                                    ActionItem {title: qsTr("Реакции");enabled: messageItem.ListItem.view.liveReactions;onTriggered: messageItem.ListItem.view.openReactions(ListItemData.messageId)}
                                     ActionItem {title: ListItemData.selected?qsTr("Снять выделение"):qsTr("Выделить");onTriggered: messageItem.ListItem.view.selectMessage(ListItemData.messageId,false)}
                                     ActionItem {title: qsTr("Удалить");onTriggered: messageItem.ListItem.view.selectMessage(ListItemData.messageId,true)}
                             ActionItem { objectName: "replyAction-"+(ListItemData.messageId || ""); title: qsTr("Ответить"); imageSource: "asset:///icons/reply-white.png"; enabled: messageItem.ListItem.view.canReply && !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"reply") }
@@ -334,6 +351,14 @@ Page {
                                 pixelSize: ui.du(messageItem.ListItem.view.preferences.textSize===0?2.8:messageItem.ListItem.view.preferences.textSize===2?3.8:3.2)
                                 textWidth: Math.min(ui.du(54), messageItem.ListItem.view.rowWidth - ui.du(15))
                                 topMargin: 0; bottomMargin: 0
+                            }
+                            EmojiLabel {
+                                visible: (ListItemData.reactionDisplay || "").length>0
+                                text: ListItemData.reactionDisplay || ""
+                                ink: messageItem.ListItem.view.preferences.dark?"#f2f5f6":Ui.ink
+                                textWidth: Math.min(ui.du(52),messageItem.ListItem.view.rowWidth-ui.du(15))
+                                pixelSize: ui.du(2.8);textSize: 0
+                                gestureHandlers: [TapHandler {onTapped: messageItem.ListItem.view.openReactions(ListItemData.messageId)}]
                             }
                             ImageView {
                                 visible: ListItemData.media !== undefined && ListItemData.media.kind === "photo" && ListItemData.media.localUrl.length > 0

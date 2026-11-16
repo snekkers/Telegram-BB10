@@ -74,3 +74,5 @@ SOURCES += $$PWD/src/Preferences.cpp
 HEADERS += $$PWD/src/Preferences.hpp
 
 HEADERS += $$PWD/src/FormattedText.hpp
+
+SOURCES += $$PWD/src/TelegramReactions.cpp
