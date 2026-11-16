@@ -8,3 +8,6 @@
 *.qml text eol=lf
 *.md text eol=lf
 porting/native/* text eol=lf
+
+# Unified diff patches contain a space on blank context lines.
+*.patch whitespace=-blank-at-eol

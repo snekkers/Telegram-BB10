@@ -1,0 +1,53 @@
+--- a/tdutils/td/utils/port/detail/Poll.cpp
++++ b/tdutils/td/utils/port/detail/Poll.cpp
+@@ -26,6 +26,7 @@
+ 
+ void Poll::clear() {
+   pollfds_.clear();
++  fds_.clear();
+ }
+ 
+ void Poll::subscribe(PollableFd fd, PollFlags flags) {
+@@ -49,10 +50,10 @@
+   SCOPE_EXIT {
+     fd.release_as_list_node();
+   };
+-  for (auto it = pollfds_.begin(); it != pollfds_.end(); ++it) {
+-    if (it->fd == fd.native_fd().fd()) {
+-      pollfds_.erase(it);
+-      fds_.erase(fds_.begin() + (it - pollfds_.begin()));
++  for (size_t i = 0; i < fds_.size(); ++i) {
++    if (fds_[i].native_fd().fd() == fd.native_fd().fd()) {
++      pollfds_.erase(pollfds_.begin() + i);
++      fds_.erase(fds_.begin() + i);
+       return;
+     }
+   }
+@@ -63,12 +64,25 @@
+ }
+ 
+ void Poll::run(int timeout_ms) {
+-  int err = poll(pollfds_.data(), narrow_cast<int>(pollfds_.size()), timeout_ms);
++  auto waiting = pollfds_;
++  // Like Select::run, wait only for readiness not already pending in the actor.
++  // A connected socket is normally writable: polling POLLOUT repeatedly while
++  // its Write flag is still set would spin the scheduler at full CPU.
++  for (size_t i = 0; i < fds_.size(); ++i) {
++    auto ready = fds_[i].get_flags_unsafe();
++    auto &fd = waiting[i];
++    fd.fd = ready.can_close() || ready.has_pending_error() ? -1 : fds_[i].native_fd().fd();
++    fd.events = 0;
++    fd.revents = 0;
++    if ((pollfds_[i].events & POLLIN) && !ready.can_read()) fd.events |= POLLIN;
++    if ((pollfds_[i].events & POLLOUT) && !ready.can_write()) fd.events |= POLLOUT;
++  }
++  int err = poll(waiting.data(), narrow_cast<int>(waiting.size()), timeout_ms);
+   auto poll_errno = errno;
+   LOG_IF(FATAL, err == -1 && poll_errno != EINTR) << Status::PosixError(poll_errno, "poll failed");
+ 
+   for (size_t i = 0; i < pollfds_.size(); i++) {
+-    auto &pollfd = pollfds_[i];
++    auto &pollfd = waiting[i];
+     auto &fd = fds_[i];
+ 
+     PollFlags flags;

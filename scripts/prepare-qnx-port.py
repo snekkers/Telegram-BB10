@@ -64,16 +64,16 @@ def main():
         print(name + ": verified " + str(expected), flush=True)
     tdlib = sources["tdlib"]
     td_source = workspace / tdlib["destination"] / tdlib["root"]
-    patch = ROOT / "porting/tdlib-qnx.patch"
-    command = ["patch", "-p1", "-i", str(patch)]
-    check = subprocess.run(command + ["--forward", "--dry-run"], cwd=td_source, capture_output=True)
-    if check.returncode == 0:
-        subprocess.run(command + ["--forward"], cwd=td_source, check=True)
-    else:
-        reverse = subprocess.run(command + ["--reverse", "--dry-run"], cwd=td_source, capture_output=True)
-        if reverse.returncode != 0:
-            raise RuntimeError("TDLib source no longer matches the QNX patch")
-        print("tdlib: QNX patch already applied", flush=True)
+    for patch in [ROOT / "porting/tdlib-qnx.patch", ROOT / "porting/tdlib-qnx-poll.patch"]:
+        command = ["patch", "-p1", "-i", str(patch)]
+        check = subprocess.run(command + ["--forward", "--dry-run"], cwd=td_source, capture_output=True)
+        if check.returncode == 0:
+            subprocess.run(command + ["--forward"], cwd=td_source, check=True)
+        else:
+            reverse = subprocess.run(command + ["--reverse", "--dry-run"], cwd=td_source, capture_output=True)
+            if reverse.returncode != 0:
+                raise RuntimeError("TDLib source no longer matches " + patch.name)
+            print("tdlib: " + patch.name + " already applied", flush=True)
     (workspace / "verified-sources.json").write_text(json.dumps(sources, indent=2) + "\n")
 
 

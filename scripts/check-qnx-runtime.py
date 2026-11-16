@@ -12,6 +12,7 @@ def verify():
     manifest = json.loads((RUNTIME / "runtime-manifest.json").read_text())
     assert manifest["platform"] == "BlackBerry 10 ARMv7 softfp"
     assert manifest["tdlib_version"] == "1.8.69"
+    assert manifest.get("poll_patch_sha256") == hashlib.sha256((ROOT / "porting/tdlib-qnx-poll.patch").read_bytes()).hexdigest()
     assert manifest["link_undefined_symbols_rejected"] is True
     required = {"bin/berrygram-tdjson", "lib/libtdjson.so", "lib/libstdc++.so.6", "lib/libgcc_s.so.1"}
     found = set()

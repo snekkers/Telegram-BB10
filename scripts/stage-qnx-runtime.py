@@ -107,6 +107,7 @@ def main():
         "platform": "BlackBerry 10 ARMv7 softfp", "tdlib_version": "1.8.69",
         "upstream_commit": "4c6377aa7386c39217878a9a56d581922ad37ca4",
         "local_patch_sha256": hashlib.sha256((ROOT / "porting/tdlib-qnx.patch").read_bytes()).hexdigest(),
+        "poll_patch_sha256": hashlib.sha256((ROOT / "porting/tdlib-qnx-poll.patch").read_bytes()).hexdigest(),
         "link_undefined_symbols_rejected": True, "json_c_api_exports_verified": True,
         "dependency_files_checked_for_header_shadowing": checked_headers,
         "device_execution_tested": device_evidence is not None,
