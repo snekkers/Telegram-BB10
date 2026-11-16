@@ -31,7 +31,7 @@ Page {
     }
 
     function submitDraft() {
-        var accepted = liveChat ? _live.sendText(messageField.text) : _chat.sendDemoMessage(messageField.text);
+        var accepted = liveChat ? _live.sendSelected(messageField.text) : _chat.sendDemoMessage(messageField.text);
         if (accepted) {
             messageField.text = "";
             messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.Default);
@@ -50,6 +50,9 @@ Page {
         title: chatPage.liveChat ? (_live.currentChatTitle || "Telegram") : _chat.currentChatTitle
     }
     actions: [
+        ActionItem { title: qsTr("Прикрепить файл"); enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("document") },
+        ActionItem { title: qsTr("Отправить фото"); enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("photo") },
+        ActionItem { title: _live.recording ? qsTr("Завершить запись") : qsTr("Записать голос"); enabled: chatPage.liveChat && _live.canAttach; onTriggered: _live.toggleRecording() },
         ActionItem {
             title: qsTr("Ранее")
             enabled: chatPage.liveChat && _live.canLoadHistory
@@ -170,6 +173,23 @@ Page {
                 }
             ]
         }
+        Label { visible: chatPage.liveChat && _live.mediaError.length > 0; text: _live.mediaError; multiline: true; textFormat: TextFormat.Plain }
+        Label { visible: chatPage.liveChat && _live.recording; text: qsTr("Идёт запись · до 5 минут"); textStyle.base: SystemDefaults.TextStyles.SmallText }
+        Container {
+            visible: chatPage.liveChat && _live.attachmentName.length > 0
+            leftPadding: ui.du(1); rightPadding: ui.du(1)
+            Label { text: _live.attachmentName; textFormat: TextFormat.Plain; textStyle.base: SystemDefaults.TextStyles.SmallText }
+            Container {
+                layout: StackLayout { orientation: LayoutOrientation.LeftToRight }
+                Button { text: qsTr("Предпросмотр"); enabled: !_live.recording; onClicked: _live.previewAttachment() }
+                Button { text: qsTr("Убрать"); onClicked: _live.cancelAttachment() }
+            }
+        }
+        Button {
+            visible: chatPage.liveChat && _live.hasFailedAttachment && _live.attachmentName.length === 0
+            text: qsTr("Восстановить вложение")
+            onClicked: { _live.recoverAttachment(); messageField.text = _live.draftText; }
+        }
         Button {
             visible: chatPage.liveChat && _live.failedDraft.length > 0
             enabled: messageField.text.length === 0
@@ -191,7 +211,7 @@ Page {
                 id: messageField
                 objectName: "messageField"
                 hintText: chatPage.liveChat ? _live.composerHint : qsTr("Демонстрационное сообщение")
-                enabled: !chatPage.liveChat || _live.canSend
+                enabled: !chatPage.liveChat || _live.canSendSelected
                 onTextChanged: {
                     if (chatPage.liveChat) _live.setDraft(text);
                 }
@@ -201,14 +221,14 @@ Page {
                 input {
                     submitKey: SubmitKey.Send
                     onSubmitted: {
-                        if (!chatPage.liveChat || _live.canSend) chatPage.submitDraft();
+                        if (!chatPage.liveChat || _live.canSendSelected) chatPage.submitDraft();
                     }
                 }
             }
 
             Button {
                 text: qsTr("Отправить")
-                enabled: messageField.text.trim().length > 0 && (!chatPage.liveChat || _live.canSend)
+                enabled: (messageField.text.trim().length > 0 || (chatPage.liveChat && _live.attachmentName.length > 0)) && (!chatPage.liveChat || _live.canSendSelected)
                 onClicked: chatPage.submitDraft()
             }
         }

@@ -3,6 +3,8 @@
 
 #include <QDateTime>
 #include <QFileInfo>
+#include <QFile>
+#include <QSize>
 #include <QDir>
 #include <QUrl>
 #include <algorithm>
@@ -29,6 +31,49 @@ bool chatBefore(const QVariantMap &a, const QVariantMap &b)
 bool requestBefore(const QVariantMap &a, const QVariantMap &b)
 {
     return a.value("sequence").toUInt() < b.value("sequence").toUInt();
+}
+QString privateMediaPath(const QString &data, const QString &path)
+{
+    QFileInfo candidate(path);
+    if (!candidate.isFile() || candidate.isSymLink()) return QString();
+    const QString canonical = candidate.canonicalFilePath();
+    const QStringList folders = QStringList() << "files" << "uploads";
+    foreach (const QString &folder, folders) {
+        QFileInfo directory(QDir(data).filePath(folder));
+        const QString boundary = directory.canonicalFilePath();
+        if (!directory.isSymLink() && !boundary.isEmpty() && canonical.startsWith(boundary + "/")) return canonical;
+    }
+    return QString();
+}
+unsigned bigEndian(const QByteArray &data, int offset, int length)
+{
+    unsigned result = 0;
+    for (int i = 0; i < length; ++i) result = (result << 8) | (unsigned char)data.at(offset + i);
+    return result;
+}
+QSize photoDimensions(const QByteArray &header)
+{
+    if (header.size() >= 24 && header.startsWith("\x89PNG\r\n\x1a\n") && header.mid(12, 4) == "IHDR") {
+        const unsigned width = bigEndian(header, 16, 4), height = bigEndian(header, 20, 4);
+        if (width <= 10000 && height <= 10000) return QSize(width, height);
+    }
+    if (!header.startsWith("\xff\xd8\xff")) return QSize();
+    int offset = 2;
+    while (offset + 4 <= header.size()) {
+        if ((unsigned char)header.at(offset++) != 255) return QSize();
+        while (offset < header.size() && (unsigned char)header.at(offset) == 255) ++offset;
+        if (offset + 3 > header.size()) break;
+        const unsigned marker = (unsigned char)header.at(offset++);
+        if (marker == 217 || marker == 218) break;
+        const unsigned length = bigEndian(header, offset, 2);
+        if (length < 2 || offset + int(length) > header.size()) break;
+        if ((marker >= 192 && marker <= 195) || (marker >= 197 && marker <= 199) || (marker >= 201 && marker <= 203) || (marker >= 205 && marker <= 207)) {
+            if (length >= 8) return QSize(bigEndian(header, offset + 5, 2), bigEndian(header, offset + 3, 2));
+            break;
+        }
+        offset += length;
+    }
+    return QSize();
 }
 QString draftValue(const QVariant &draft)
 {
@@ -60,6 +105,7 @@ void TelegramStore::reset()
     m_draftTimer.stop(); m_drafts.clear(); m_dirtyDrafts.clear(); m_draftInFlight.clear();
     m_files.clear(); m_downloading.clear();
     m_chatRows.clear(); m_messageRows.clear();
+    m_failedAttachments.clear(); m_sentAttachments.clear(); m_earlyAttachmentOutcomes.clear();
     m_historyCursor = 0;
     m_loadingChats = m_loadingHistory = m_chatsEnd = m_historyEnd = false;
     emit chatsChanged();
@@ -217,6 +263,62 @@ bool TelegramStore::canSend() const
         !chat.value("topics").toBool() && chat.value("type").toString() != "chatTypeSecret";
 }
 
+bool TelegramStore::canSendMedia(const QString &kind) const
+{
+    const QVariantMap chat = m_chats.value(m_current);
+    const QString permission = kind == "photo" ? "can_send_photos" : kind == "voice" ? "can_send_voice_notes" : "can_send_documents";
+    return (kind == "document" || kind == "photo" || kind == "voice") && m_ready && !m_current.isEmpty() &&
+        !sendBusy() && !chat.value("topics").toBool() && chat.value("type").toString() != "chatTypeSecret" &&
+        chat.value("permissions").toMap().value(permission).toBool();
+}
+
+QString TelegramStore::uploadDirectory() const
+{
+    return QDir(m_session->dataDirectory()).filePath("uploads");
+}
+
+bool TelegramStore::sendAttachment(const QString &path, const QString &kind, const QString &caption, int duration, int width, int height)
+{
+    QFileInfo candidate(path), directory(uploadDirectory());
+    const QString boundary = directory.canonicalFilePath();
+    QFile source(path);
+    bool valid = canSendMedia(kind) && caption.size() <= 1024 && !boundary.isEmpty() && !directory.isSymLink() &&
+        candidate.isFile() && !candidate.isSymLink() && candidate.canonicalFilePath().startsWith(boundary + "/") &&
+        candidate.size() > 0 && candidate.size() <= 50 * 1024 * 1024 && source.open(QIODevice::ReadOnly);
+    QByteArray header = valid ? source.read(256 * 1024) : QByteArray();
+    source.close();
+    if (kind == "photo") {
+        const QSize dimensions = photoDimensions(header); width = dimensions.width(); height = dimensions.height();
+        valid = valid && candidate.size() <= 10 * 1024 * 1024 && width > 0 && height > 0 && width + height <= 10000 &&
+            width <= height * 20 && height <= width * 20;
+    }
+    if (kind == "voice") {
+        const QString suffix = candidate.suffix().toLower();
+        const int opus = header.indexOf("OpusHead");
+        const bool ogg = suffix == "ogg" && header.startsWith("OggS") && opus >= 0 && header.size() > opus + 9 && header.at(opus + 9) == 1;
+        const bool m4a = suffix == "m4a" && header.mid(4, 4) == "ftyp";
+        const bool mp3 = suffix == "mp3" && (header.startsWith("ID3") || (header.size() > 1 && (unsigned char)header[0] == 255 && ((unsigned char)header[1] & 224) == 224));
+        valid = valid && duration > 0 && duration <= 300 && (ogg || m4a || mp3);
+    }
+    if (!valid) { m_error = ru("Вложение недоступно: проверьте формат, размер и разрешения чата."); emit changed(); return false; }
+    QVariantMap attachment;
+    attachment.insert("path", candidate.canonicalFilePath()); attachment.insert("kind", kind); attachment.insert("caption", caption);
+    attachment.insert("duration", duration); attachment.insert("width", width); attachment.insert("height", height);
+    QVariantMap content = method(kind == "photo" ? "inputMessagePhoto" : kind == "voice" ? "inputMessageVoiceNote" : "inputMessageDocument");
+    QVariantMap input = method(kind == "photo" ? "inputPhoto" : kind == "voice" ? "inputVoiceNote" : "inputDocument");
+    QVariantMap file = method("inputFileLocal"); file.insert("path", candidate.canonicalFilePath());
+    const QString field = kind == "photo" ? "photo" : kind == "voice" ? "voice_note" : "document";
+    input.insert(field, file);
+    if (kind == "photo") { input.insert("width", width); input.insert("height", height); input.insert("added_sticker_file_ids", QVariantList()); }
+    if (kind == "document") input.insert("disable_content_type_detection", true);
+    if (kind == "voice") { input.insert("duration", duration); input.insert("waveform", ""); }
+    content.insert(field, input);
+    QVariantMap formatted = method("formattedText"); formatted.insert("text", caption); formatted.insert("entities", QVariantList());
+    content.insert("caption", formatted);
+    return sendContent(content, (kind == "photo" ? ru("Фото") : kind == "voice" ? ru("Голосовое сообщение") : candidate.fileName()) +
+        (caption.isEmpty() ? QString() : "\n" + caption), attachment);
+}
+
 bool TelegramStore::openChat(const QString &id)
 {
     if (!m_ready || !m_chats.contains(id))
@@ -307,14 +409,13 @@ QVariantMap TelegramStore::fileInfo(const QVariantMap &file) const
     const QVariantMap local = file.value("local").toMap();
     result.insert("fileId", file.value("id"));
     result.insert("size", qMax(file.value("size").toLongLong(), file.value("expected_size").toLongLong()));
+    result.insert("uploaded", file.value("remote").toMap().value("uploaded_size"));
+    result.insert("uploading", file.value("remote").toMap().value("is_uploading_active").toBool());
     result.insert("downloaded", local.value("downloaded_size"));
     result.insert("downloading", local.value("is_downloading_active").toBool());
     QString path;
     if (local.value("is_downloading_completed").toBool()) {
-        QFileInfo candidate(local.value("path").toString());
-        const QString boundary = QFileInfo(QDir(m_session->dataDirectory()).filePath("files")).canonicalFilePath();
-        if (!boundary.isEmpty() && candidate.isFile() && !candidate.isSymLink() &&
-            candidate.canonicalFilePath().startsWith(boundary + "/")) path = candidate.canonicalFilePath();
+        path = privateMediaPath(m_session->dataDirectory(), local.value("path").toString());
     }
     result.insert("path", path);
     result.insert("localUrl", path.isEmpty() ? QString() : QUrl::fromLocalFile(path).toString());
@@ -342,6 +443,13 @@ QVariantMap TelegramStore::mediaInfo(const QVariantMap &content) const
         file = document.value("document").toMap();
         result.insert("kind", "document"); result.insert("name", document.value("file_name"));
         result.insert("mime", document.value("mime_type"));
+    }
+    if (type == "messageVoiceNote" || type == "messageAudio") {
+        const bool voice = type == "messageVoiceNote";
+        const QVariantMap audio = content.value(voice ? "voice_note" : "audio").toMap();
+        file = audio.value(voice ? "voice" : "audio").toMap();
+        result.insert("kind", voice ? "voice" : "audio"); result.insert("duration", audio.value("duration"));
+        result.insert("name", voice ? (audio.value("mime_type").toString() == "audio/ogg" ? "voice.ogg" : "voice.m4a") : audio.value("file_name").toString()); result.insert("mime", audio.value("mime_type"));
     }
     if (file.value("id").toInt() <= 0) return QVariantMap();
     if (m_files.contains(file.value("id").toInt())) file = m_files.value(file.value("id").toInt());
@@ -374,10 +482,7 @@ void TelegramStore::updateFile(const QVariantMap &file)
 QString TelegramStore::mediaPath(const QString &messageId) const
 {
     const QString path = m_messages.value(messageId.toLongLong()).value("media").toMap().value("path").toString();
-    QFileInfo file(path);
-    const QString boundary = QFileInfo(QDir(m_session->dataDirectory()).filePath("files")).canonicalFilePath();
-    return !boundary.isEmpty() && file.isFile() && !file.isSymLink() && file.canonicalFilePath().startsWith(boundary + "/")
-        ? file.canonicalFilePath() : QString();
+    return privateMediaPath(m_session->dataDirectory(), path);
 }
 
 QString TelegramStore::mediaMime(const QString &messageId) const
@@ -473,17 +578,20 @@ bool TelegramStore::sendText(const QString &text)
         emit changed();
         return false;
     }
-    QVariantMap call = method("sendMessage");
-    call.insert("chat_id", number(m_current));
-    QVariantMap options = method("messageSendOptions");
-    options.insert("paid_message_star_count", 0);
-    call.insert("options", options);
     QVariantMap content = method("inputMessageText");
     QVariantMap formatted = method("formattedText");
     formatted.insert("text", text); // Keep the user's spaces and newlines.
     formatted.insert("entities", QVariantList());
     content.insert("text", formatted);
     content.insert("clear_draft", false);
+    return sendContent(content, text);
+}
+
+bool TelegramStore::sendContent(const QVariantMap &content, const QString &text, const QVariantMap &attachment)
+{
+    if (m_outbox.size() >= 64) return false;
+    QVariantMap call = method("sendMessage"); call.insert("chat_id", number(m_current));
+    QVariantMap options = method("messageSendOptions"); options.insert("paid_message_star_count", 0); call.insert("options", options);
     call.insert("input_message_content", content);
     const QString id = submit(call, "send", m_current);
     if (id.isEmpty()) return false;
@@ -497,6 +605,7 @@ bool TelegramStore::sendText(const QString &text)
     row.insert("time", QDateTime::currentDateTime().toString("dd.MM HH:mm"));
     row.insert("delivery", ru("Ожидание ответа движка…"));
     row.insert("edited", false);
+    row.insert("attachment", attachment);
     m_outbox.insert(id, row);
     setDraft(QString());
     flushDrafts();
@@ -627,9 +736,23 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
         const QString text = m_outbox.value(extra).value("text").toString();
         if (error) {
             if (m_outbox.contains(extra)) m_outbox[extra].insert("delivery", ru("Не отправлено"));
-            m_failedDrafts.insert(chat, text);
-            if (chat == m_current) m_error = ru("Отправка отклонена (код %1). Текст можно вернуть в поле ввода.").arg(object.value("code").toInt());
+            const QVariantMap attachment = m_outbox.value(extra).value("attachment").toMap();
+            if (attachment.isEmpty()) m_failedDrafts.insert(chat, text);
+            else m_failedAttachments.insert(chat, attachment);
+            if (chat == m_current) m_error = ru("Отправка отклонена (код %1). Вложение или текст можно вернуть в поле ввода.").arg(object.value("code").toInt());
         } else if (type == "message") {
+            const QVariantMap attachment = m_outbox.value(extra).value("attachment").toMap();
+            if (!attachment.isEmpty()) {
+                const QString key = chat + ":" + idString(object.value("id"));
+                const QString outcome = m_earlyAttachmentOutcomes.take(key);
+                const bool failed = outcome == "failed" || (chat == m_current &&
+                    m_messages.value(object.value("id").toLongLong()).value("sendingState") == "messageSendingStateFailed");
+                if (failed) m_failedAttachments.insert(chat, attachment);
+                else {
+                    if (outcome != "succeeded") m_sentAttachments.insert(key, attachment);
+                    m_failedAttachments.remove(chat);
+                }
+            }
             m_outbox.remove(extra);
             upsertMessage(object);
             bool uncertain = false;
@@ -679,6 +802,7 @@ void TelegramStore::consume(const QVariantMap &object)
         chat.insert("title", source.value("title"));
         chat.insert("type", source.value("type").toMap().value("@type"));
         chat.insert("topics", source.value("view_as_topics"));
+        chat.insert("permissions", source.value("permissions"));
         chat.insert("canSend", source.value("permissions").toMap().value("can_send_basic_messages"));
         chat.insert("unreadCount", source.value("unread_count"));
         chat.insert("readOutbox", idString(source.value("last_read_outbox_message_id")));
@@ -698,7 +822,7 @@ void TelegramStore::consume(const QVariantMap &object)
     } else if (type.startsWith("updateChat") && m_chats.contains(chatId)) {
         QVariantMap &chat = m_chats[chatId];
         if (type == "updateChatTitle") chat.insert("title", object.value("title"));
-        else if (type == "updateChatPermissions") chat.insert("canSend", object.value("permissions").toMap().value("can_send_basic_messages"));
+        else if (type == "updateChatPermissions") { chat.insert("permissions", object.value("permissions")); chat.insert("canSend", object.value("permissions").toMap().value("can_send_basic_messages")); }
         else if (type == "updateChatReadInbox") chat.insert("unreadCount", object.value("unread_count"));
         else if (type == "updateChatReadOutbox") chat.insert("readOutbox", idString(object.value("last_read_outbox_message_id")));
         else if (type == "updateChatViewAsTopics") chat.insert("topics", object.value("view_as_topics"));
@@ -719,6 +843,19 @@ void TelegramStore::consume(const QVariantMap &object)
         emit changed();
     } else if (type == "updateNewMessage" || type == "updateMessageSendSucceeded" || type == "updateMessageSendFailed") {
         QVariantMap message = object.value("message").toMap();
+        const QString sendChat = idString(message.value("chat_id"));
+        const QString attachmentKey = sendChat + ":" + idString(object.value("old_message_id"));
+        if ((type == "updateMessageSendFailed" || type == "updateMessageSendSucceeded") && !m_sentAttachments.contains(attachmentKey)) {
+            for (QMap<QString, QVariantMap>::const_iterator it = m_outbox.constBegin(); it != m_outbox.constEnd(); ++it)
+                if (it.value().value("chatId") == sendChat && !it.value().value("attachment").toMap().isEmpty()) {
+                    if (m_earlyAttachmentOutcomes.size() < 128)
+                        m_earlyAttachmentOutcomes.insert(attachmentKey, type == "updateMessageSendFailed" ? "failed" : "succeeded");
+                    break;
+                }
+        }
+        if (type == "updateMessageSendFailed" && m_sentAttachments.contains(attachmentKey))
+            m_failedAttachments.insert(sendChat, m_sentAttachments.take(attachmentKey));
+        if (type == "updateMessageSendSucceeded") m_sentAttachments.remove(attachmentKey);
         if (idString(message.value("chat_id")) == m_current) {
             qlonglong id = message.value("id").toLongLong();
             if (type != "updateNewMessage") {
@@ -731,7 +868,7 @@ void TelegramStore::consume(const QVariantMap &object)
             if (type == "updateMessageSendFailed") {
                 if (message.value("content").toMap().value("@type") == "messageText")
                     m_failedDrafts.insert(m_current, messageText(message.value("content").toMap()));
-                m_error = ru("Сообщение не отправлено. Текст можно вернуть в поле ввода.");
+                m_error = ru("Сообщение не отправлено. Можно восстановить текст или вложение.");
             }
             rebuildMessages();
             emit changed();

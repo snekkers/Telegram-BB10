@@ -2,8 +2,8 @@
 <qnx xmlns="http://www.qnx.com/schemas/application/1.0">
     <id>org.example.berrygram</id>
     <name>Berrygram</name>
-    <versionNumber>0.4.0</versionNumber>
-    <buildId>4</buildId>
+    <versionNumber>0.5.0</versionNumber>
+    <buildId>5</buildId>
     <description>Experimental native Telegram client for BlackBerry Classic.</description>
     <author>Berrygram Developer</author>
 
@@ -29,5 +29,7 @@
     <asset path="assets">assets</asset>
     <permission system="true">run_native</permission>
     <permission>access_internet</permission>
+    <permission>access_shared</permission>
+    <permission>record_audio</permission>
     <env var="LD_LIBRARY_PATH" value="app/native/lib:/usr/lib/qt4/lib"/>
 </qnx>

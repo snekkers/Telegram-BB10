@@ -23,6 +23,11 @@ public:
     bool canLoadChats() const { return m_ready && !m_loadingChats && !m_chatsEnd; }
     bool canLoadHistory() const { return m_ready && !m_current.isEmpty() && !m_loadingHistory && !m_historyEnd; }
     bool canSend() const;
+    bool canSendMedia(const QString &kind) const;
+    QString uploadDirectory() const;
+    QVariantMap failedAttachment() const { return m_failedAttachments.value(m_current); }
+    bool sendAttachment(const QString &path, const QString &kind, const QString &caption,
+                        int duration = 0, int width = 0, int height = 0);
     bool sendBusy() const;
     QString currentChatTitle() const;
     QString errorText() const { return m_error; }
@@ -76,6 +81,7 @@ private:
     void updateFile(const QVariantMap &file);
     void history(bool initial);
     void response(const QVariantMap &object, const QVariantMap &request);
+    bool sendContent(const QVariantMap &content, const QString &text, const QVariantMap &attachment = QVariantMap());
 
     TelegramSession *m_session;
     QTimer m_expiry;
@@ -83,7 +89,8 @@ private:
     QElapsedTimer m_clock;
     int m_requestTimeoutMs;
     QMap<QString, QVariantMap> m_chats, m_users, m_requests, m_outbox;
-    QMap<QString, QString> m_failedDrafts;
+    QMap<QString, QVariantMap> m_failedAttachments, m_sentAttachments;
+    QMap<QString, QString> m_failedDrafts, m_earlyAttachmentOutcomes;
     QMap<QString, QString> m_drafts, m_dirtyDrafts, m_draftInFlight;
     QMap<qlonglong, QVariantMap> m_messages, m_overlays;
     QMap<int, QVariantMap> m_files;

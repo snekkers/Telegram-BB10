@@ -47,6 +47,10 @@ private slots:
         state.insert("error", m_store.errorText()); state.insert("connection", m_store.connectionStatus());
         state.insert("loadingChats", m_store.loadingChats()); state.insert("loadingHistory", m_store.loadingHistory());
         state.insert("canLoadChats", m_store.canLoadChats()); state.insert("canLoadHistory", m_store.canLoadHistory());
+        state.insert("canSendDocument", m_store.canSendMedia("document"));
+        state.insert("canSendPhoto", m_store.canSendMedia("photo"));
+        state.insert("canSendVoice", m_store.canSendMedia("voice"));
+        state.insert("failedAttachment", m_store.failedAttachment());
         state.insert("canSend", m_store.canSend()); state.insert("composerHint", m_store.composerHint());
         QByteArray bytes = JsonCodec::encode(state);
         if (bytes != m_previous) { output(bytes); m_previous = bytes; }
@@ -84,6 +88,9 @@ private:
         else if (action == "closeChat") m_store.closeChat();
         else if (action == "sendText") ok = command.value("chatId").toString() == m_store.currentChatId() &&
             !m_store.currentChatId().isEmpty() && m_store.sendText(command.value("text").toString());
+        else if (action == "sendAttachment") ok = command.value("chatId").toString() == m_store.currentChatId() &&
+            !m_store.currentChatId().isEmpty() && m_store.sendAttachment(command.value("path").toString(), command.value("kind").toString(),
+                command.value("caption").toString(), command.value("duration").toInt(), command.value("width").toInt(), command.value("height").toInt());
         else if (action == "draft") {
             ok = command.value("chatId").toString() == m_store.currentChatId() && !m_store.currentChatId().isEmpty();
             if (ok) m_store.setDraft(command.value("text").toString());

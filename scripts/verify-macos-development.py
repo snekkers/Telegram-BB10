@@ -16,6 +16,11 @@ def main():
     tested_at = (WORK / "diagnostic-tests.json").stat().st_mtime
     assert tested_at >= (WORK / "client/berrygram-diagnostic-core").stat().st_mtime, "Rerun native integration tests after rebuilding the client"
     assert tested_at >= (WORK / "tdlib/libtdjson.1.8.69.dylib").stat().st_mtime, "Rerun native integration tests after rebuilding TDLib"
+    recording_report = WORK / "recording-tests.json"
+    recording = json.loads(recording_report.read_text())
+    assert recording["passed"] and not recording["hardware_microphone_used"]
+    assert recording_report.stat().st_mtime >= max((ROOT / name).stat().st_mtime for name in
+        ("diagnostic/web/app.js", "tests/diagnostic-recording-tests.js")), "Rerun recording tests after changing the UI"
     inputs = {
         "tdlib": WORK / "tdlib/libtdjson.1.8.69.dylib",
         "qtcore": WORK / "prefix/qt/lib/libQt5Core.5.15.19.dylib",
@@ -31,12 +36,12 @@ def main():
         outputs.append({"name": name, "path": str(path.relative_to(ROOT)), "bytes": path.stat().st_size,
                         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(), "dependencies": dependencies.splitlines()[1:]})
     report = {"platform": "macOS " + platform.mac_ver()[0] + " ARM64", "sources": json.loads((WORK / "sources.json").read_text()),
-              "files": outputs, "tests": tests["tests"],
+              "files": outputs, "tests": tests["tests"], "recording_tests": recording,
               "not_checked": ["real account login", "real Telegram chat traffic", "BB10 runtime"],
               "visual_qa": {"browser": "Codex in-app browser", "synthetic_data": True,
                             "checks": ["initialization", "chat list", "keyboard send", "media download/display",
-                                       "draft restored after chat switch", "page reload", "narrow and desktop layout"],
-                            "screenshot": "build/macos-development/screenshots/fixture-chat.jpg"}}
+                                       "draft restored after chat switch", "page reload", "narrow and desktop layout", "attachment preview and manual recovery", "synthetic M4A preview/player metadata"],
+                            "screenshot": "build/macos-development/screenshots/fixture-media.jpg"}}
     (WORK / "verification.json").write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print("Native macOS build, dependencies, integration tests and visual QA recorded")
 

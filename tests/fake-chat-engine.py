@@ -3,6 +3,7 @@
 import json
 import sys
 import base64
+import shutil
 from pathlib import Path
 
 assert Path(sys.argv[sys.argv.index("--library") + 1]).is_file()
@@ -49,7 +50,7 @@ def positions(order, name="chatListMain"):
 def chat(cid, title, order, can_send=True):
     return {"@type": "chat", "id": cid, "title": title, "positions": positions(order),
             "type": {"@type": "chatTypePrivate" if cid == B else "chatTypeSupergroup"},
-            "permissions": {"@type": "chatPermissions", "can_send_basic_messages": can_send},
+            "permissions": {"@type": "chatPermissions", "can_send_basic_messages": can_send, "can_send_documents": can_send, "can_send_photos": can_send, "can_send_voice_notes": can_send},
             "unread_count": 3, "last_read_outbox_message_id": 0, "view_as_topics": False,
             "last_message": message(30, cid)}
 
@@ -140,6 +141,54 @@ for line in sys.stdin:
         assert query["chat_id"] in (A, B) and isinstance(query["chat_id"], int)
         assert query["options"]["paid_message_star_count"] == 0
         body = query["input_message_content"]
+        if body["@type"] != "inputMessageText":
+            types = {"inputMessageDocument": ("document", "inputDocument", "messageDocument"),
+                     "inputMessagePhoto": ("photo", "inputPhoto", "messagePhoto"),
+                     "inputMessageVoiceNote": ("voice_note", "inputVoiceNote", "messageVoiceNote")}
+            field, nested_type, result_type = types[body["@type"]]
+            nested = body[field]
+            assert nested["@type"] == nested_type and nested[field]["@type"] == "inputFileLocal"
+            path = Path(nested[field]["path"])
+            assert path.is_file() and path.resolve().is_relative_to((library_path.parent / "private/uploads").resolve())
+            assert body["caption"]["@type"] == "formattedText" and body["caption"]["entities"] == []
+            caption = body["caption"]["text"]
+            if field == "voice_note":
+                assert 0 < nested["duration"] <= 300 and nested["waveform"] == ""
+            if field == "document":
+                assert nested["disable_content_type_detection"] is True
+            if caption == "deny":
+                reply(query, "error", code=403, message="fixture attachment rejected")
+                continue
+            saved = library_path.parent / "private/files" / (str(sent_count) + "-" + path.name)
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, saved)
+            file = {"@type": "file", "id": 100 + sent_count, "size": saved.stat().st_size,
+                    "local": {"path": str(saved), "is_downloading_completed": True},
+                    "remote": {"uploaded_size": saved.stat().st_size, "is_uploading_active": False}}
+            if field == "document":
+                media = {"document": file, "file_name": path.name, "mime_type": "application/octet-stream"}
+            elif field == "photo":
+                assert nested["width"] > 0 and nested["height"] > 0
+                media = {"sizes": [{"width": nested["width"], "height": nested["height"], "photo": file}]}
+            else:
+                media = {"voice": file, "duration": nested["duration"], "mime_type": "audio/mp4" if path.suffix == ".m4a" else "audio/ogg"}
+            mid = 6000 + sent_count
+            outgoing = message(mid, query["chat_id"], "", True, {"@type": "messageSendingStatePending"})
+            outgoing["content"] = {"@type": result_type, field: media, "caption": body["caption"]}
+            if caption == "fail-before-response":
+                failed = {**outgoing, "sending_state": {"@type": "messageSendingStateFailed", "error": {"code": 403}}}
+                send({"@type": "updateMessageSendFailed", "old_message_id": mid, "message": failed, "error": {"code": 403}})
+                reply(query, kind="message", **{k: v for k, v in outgoing.items() if k != "@type"})
+                continue
+            reply(query, kind="message", **{k: v for k, v in outgoing.items() if k != "@type"})
+            if caption == "fail-later":
+                outgoing["sending_state"] = {"@type": "messageSendingStateFailed", "error": {"code": 403}}
+                send({"@type": "updateMessageSendFailed", "old_message_id": mid, "message": outgoing, "error": {"code": 403}})
+            else:
+                send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": mid})
+                outgoing["sending_state"] = None
+                send({"@type": "updateMessageSendSucceeded", "old_message_id": mid, "message": outgoing})
+            continue
         assert body["@type"] == "inputMessageText"
         assert body["text"]["@type"] == "formattedText" and body["text"]["entities"] == []
         assert body["clear_draft"] is False

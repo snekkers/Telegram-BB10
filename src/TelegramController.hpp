@@ -3,6 +3,9 @@
 #include "TelegramStore.hpp"
 #include <bb/cascades/ArrayDataModel>
 #include <bb/system/InvokeManager>
+#include <bb/cascades/pickers/FilePicker>
+#include <bb/multimedia/AudioRecorder>
+#include <QTimer>
 
 class TelegramController : public QObject {
     Q_OBJECT
@@ -22,6 +25,12 @@ class TelegramController : public QObject {
     Q_PROPERTY(bool canSend READ canSend NOTIFY changed)
     Q_PROPERTY(bool sendBusy READ sendBusy NOTIFY changed)
     Q_PROPERTY(int scrollSerial READ scrollSerial NOTIFY changed)
+    Q_PROPERTY(QString attachmentName READ attachmentName NOTIFY changed)
+    Q_PROPERTY(QString mediaError READ mediaError NOTIFY changed)
+    Q_PROPERTY(bool recording READ recording NOTIFY changed)
+    Q_PROPERTY(bool canAttach READ canAttach NOTIFY changed)
+    Q_PROPERTY(bool canSendSelected READ canSendSelected NOTIFY changed)
+    Q_PROPERTY(bool hasFailedAttachment READ hasFailedAttachment NOTIFY changed)
     Q_PROPERTY(int chatCount READ chatCount NOTIFY changed)
 public:
     explicit TelegramController(TelegramStore *store, QObject *parent = 0);
@@ -42,8 +51,8 @@ public:
     bool sendBusy() const { return m_store->sendBusy(); }
     int scrollSerial() const { return m_scrollSerial; }
     int chatCount() const { return m_chats->size(); }
-    Q_INVOKABLE bool openChat(const QString &id) { return m_store->openChat(id); }
-    Q_INVOKABLE void closeChat() { m_store->closeChat(); }
+    Q_INVOKABLE bool openChat(const QString &id) { cancelAttachment(); return m_store->openChat(id); }
+    Q_INVOKABLE void closeChat() { cancelAttachment(); m_store->closeChat(); }
     Q_INVOKABLE bool sendText(const QString &text) { return m_store->sendText(text); }
     Q_INVOKABLE void loadMoreChats() { m_store->loadMoreChats(); }
     Q_INVOKABLE void loadMoreHistory() { m_store->loadMoreHistory(); }
@@ -55,17 +64,41 @@ public:
     Q_INVOKABLE bool markRead() { return m_store->markRead(); }
     Q_INVOKABLE bool downloadMedia(const QString &id) { return m_store->downloadMedia(id); }
     Q_INVOKABLE bool openMedia(const QString &id);
+    QString attachmentName() const { return m_attachment.value("path").toString().section('/', -1); }
+    QString mediaError() const { return m_mediaError; }
+    bool recording() const { return m_recording; }
+    bool canAttach() const { return m_store->canSendMedia("document") || m_store->canSendMedia("photo") || m_store->canSendMedia("voice"); }
+    bool canSendSelected() const { return !m_recording && (m_attachment.isEmpty() ? m_store->canSend() : m_store->canSendMedia(m_attachment.value("kind").toString())); }
+    bool hasFailedAttachment() const { return !m_store->failedAttachment().isEmpty(); }
+    Q_INVOKABLE void chooseAttachment(const QString &kind);
+    Q_INVOKABLE void cancelAttachment();
+    Q_INVOKABLE void toggleRecording();
+    Q_INVOKABLE bool sendSelected(const QString &caption);
+    Q_INVOKABLE void recoverAttachment();
+    Q_INVOKABLE bool previewAttachment();
 signals:
     void changed();
 private slots:
     void updateChats();
     void updateMessages();
     void scroll();
+    void fileSelected(const QStringList &files);
+    void finishRecording();
+    void recordingError();
+    void checkAttachmentChat();
 private:
     void reconcile(bb::cascades::ArrayDataModel *model, const QVariantList &rows, const QString &key);
+    QString newUploadPath(const QString &name);
     TelegramStore *m_store;
     bb::cascades::ArrayDataModel *m_chats, *m_messages;
     int m_scrollSerial;
     bb::system::InvokeManager m_invoke;
+    bb::cascades::pickers::FilePicker m_picker;
+    bb::multimedia::AudioRecorder m_recorder;
+    QTimer m_recordLimit;
+    QVariantMap m_attachment;
+    QString m_attachmentChat, m_pickerChat, m_pickerKind, m_mediaError;
+    bool m_recording;
+
 };
 #endif

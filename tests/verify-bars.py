@@ -25,7 +25,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.4.0.4" in manifest
+            assert "Package-Version: 0.5.0.5" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
             entry = next(line for line in manifest.splitlines() if line.startswith("Entry-Point: "))
@@ -39,6 +39,8 @@ def main():
                 ui = inspect(binary)
                 assert "libcpp.so.4" in ui["needed"]
                 assert "libbbdata.so.1" in ui["needed"]
+                assert "libbbmultimedia.so.1" in ui["needed"]
+                assert "libbbcascadespickers.so.1" in ui["needed"]
                 assert not {"libstdc++.so.6", "libgcc_s.so.1", "libtdjson.so"} & set(ui["needed"])
                 runtime = json.loads(archive.read("native/telegram/runtime-manifest.json"))
                 required = {"bin/berrygram-tdjson", "lib/libtdjson.so", "lib/libstdc++.so.6", "lib/libgcc_s.so.1"}
@@ -83,7 +85,7 @@ def main():
                        "checks": ["exact int53 IDs and int64 positions", "list and history pagination",
                                   "stale history and edit/delete races", "incoming messages and previews",
                                   "pending, acknowledged, sent, read and failed states", "send update/response races",
-                                  "timeouts, late replies and no automatic duplicate send", "permissions and data reset"]},
+                                  "timeouts, late replies and no automatic duplicate send", "permissions and data reset", "attachment paths, formats, permissions and recovery"]},
         "not_checked": ["Qt 4 JsonDataAccess execution", "BB10 runtime and QML rendering",
                         "Telegram network login", "Telegram chat loading, sending and reconnection",
                         "physical Classic installation"],

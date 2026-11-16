@@ -20,7 +20,7 @@ HEADERS += $$PWD/src/ChatController.hpp \
            $$PWD/src/TelegramController.hpp \
            $$PWD/src/JsonCodec.hpp
 HEADERS += $$PWD/src/PrivateFile.hpp
-LIBS += -lbbdata -lbbsystem
+LIBS += -lbbdata -lbbsystem -lbbcascadespickers -lbbmultimedia
 OTHER_FILES += $$PWD/bar-descriptor.xml \
                $$PWD/assets/main.qml \
                $$PWD/assets/ChatPage.qml \

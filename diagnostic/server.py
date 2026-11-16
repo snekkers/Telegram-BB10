@@ -13,13 +13,15 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 ROOT = Path(__file__).resolve().parent.parent
 WEB = Path(__file__).parent / "web"
 MAX_BODY = 65536
+MAX_UPLOAD = 50 * 1024 * 1024
+UPLOAD_QUOTA = 256 * 1024 * 1024
 ACTIONS = {"start", "stop", "configure", "useSaved", "forgetApi", "submit", "openChat", "closeChat",
-           "sendText", "draft", "search", "nextUnread", "recoverDraft", "loadChats", "loadHistory", "download", "markRead", "demoLogin"}
+           "sendAttachment", "discardUpload", "sendText", "draft", "search", "nextUnread", "recoverDraft", "loadChats", "loadHistory", "download", "markRead", "demoLogin"}
 
 
 class Bridge:
@@ -34,6 +36,8 @@ class Bridge:
         self.lock = threading.Lock()
         self.write_lock = threading.Lock()
         self.pending = {}
+        self.upload_lock = threading.Lock()
+        self.uploads = {}
         self.initialized = threading.Event()
         self.state = {"phase": "starting", "status": "Запуск диагностического клиента…"}
         threading.Thread(target=self.read, daemon=True).start()
@@ -105,7 +109,7 @@ def create_server(bridge, token, port=0):
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'")
+            self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' blob:; media-src 'self' blob:; base-uri 'none'; frame-ancestors 'none'")
             self.end_headers()
             self.wfile.write(content)
 
@@ -127,7 +131,13 @@ def create_server(bridge, token, port=0):
             if self.path == "/api/state":
                 if not self.authorized():
                     return self.reply(401)
-                return self.reply(200, json.dumps(bridge.snapshot(), ensure_ascii=False).encode())
+                state = bridge.snapshot()
+                failed = state.get("failedAttachment", {})
+                if failed:
+                    with bridge.upload_lock:
+                        upload_id = next((key for key, entry in bridge.uploads.items() if Path(entry["path"]).resolve() == Path(failed.get("path", "")).resolve()), "")
+                    state["failedAttachment"] = {**failed, "uploadId": upload_id}
+                return self.reply(200, json.dumps(state, ensure_ascii=False).encode())
             media = re.fullmatch(r"/api/media/(-?\d+)/(-?\d+)", self.path)
             if media:
                 if not self.authorized():
@@ -137,13 +147,14 @@ def create_server(bridge, token, port=0):
                     return self.reply(409)
                 selected = next((m.get("media", {}) for m in state.get("messages", []) if m.get("messageId") == media.group(2)), {})
                 path = Path(selected.get("path", ""))
-                boundary = (bridge.data / "files").resolve()
+                boundaries = [(bridge.data / folder).resolve() for folder in ("files", "uploads") if not (bridge.data / folder).is_symlink()]
                 try:
-                    if not path.is_file() or path.is_symlink() or not path.resolve().is_relative_to(boundary) or path.stat().st_size > 50 * 1024 * 1024:
+                    if not path.is_file() or path.is_symlink() or not any(path.resolve().is_relative_to(boundary) for boundary in boundaries) or path.stat().st_size > 50 * 1024 * 1024:
                         return self.reply(404)
                     with path.open("rb") as source:
                         self.send_response(200)
-                        self.send_header("Content-Type", "application/octet-stream")
+                        mime = selected.get("mime", "")
+                        self.send_header("Content-Type", mime if mime in ("audio/ogg", "audio/mp4", "audio/mpeg", "audio/aac", "image/jpeg", "image/png") else "application/octet-stream")
                         self.send_header("Content-Length", str(path.stat().st_size))
                         self.send_header("Cache-Control", "no-store")
                         self.send_header("X-Content-Type-Options", "nosniff")
@@ -155,10 +166,56 @@ def create_server(bridge, token, port=0):
                 return
             self.reply(404)
 
+        def upload(self):
+            if self.headers.get("Content-Type") != "application/octet-stream":
+                return self.reply(415)
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_UPLOAD:
+                    return self.reply(413)
+                chat_id = self.headers.get("X-Chat-Id", "")
+                state = bridge.snapshot()
+                if not state.get("ready") or not chat_id or chat_id != state.get("chatId"):
+                    return self.reply(409)
+                name = unquote(self.headers.get("X-File-Name", "attachment"))
+                name = re.sub(r'[\\/\x00-\x1f\x7f]', '_', name)[:120].strip(". ") or "attachment"
+                directory = bridge.data / "uploads"
+                with bridge.upload_lock:
+                    if directory.is_symlink():
+                        return self.reply(409)
+                    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    files = [p for p in directory.rglob("*") if p.is_file()]
+                    if len(files) >= 32 or sum(p.stat().st_size for p in files) + length > UPLOAD_QUOTA:
+                        return self.reply(413)
+                    upload_id = secrets.token_hex(16)
+                    target_dir = directory / upload_id
+                    target_dir.mkdir(mode=0o700)
+                    path = target_dir / name
+                    self.connection.settimeout(20)
+                    try:
+                        with path.open("xb") as destination:
+                            path.chmod(0o600)
+                            remaining = length
+                            while remaining:
+                                chunk = self.rfile.read(min(remaining, 65536))
+                                if not chunk:
+                                    raise OSError("Incomplete upload")
+                                destination.write(chunk)
+                                remaining -= len(chunk)
+                        bridge.uploads[upload_id] = {"path": str(path), "chatId": chat_id}
+                    except OSError:
+                        path.unlink(missing_ok=True)
+                        raise
+                return self.reply(200, json.dumps({"uploadId": upload_id, "name": name, "size": length}).encode())
+            except (ValueError, OSError):
+                return self.reply(400)
+
         def do_POST(self):
             origin = f"http://127.0.0.1:{self.server.server_port}"
             if not self.valid_host() or self.headers.get("Origin") != origin or not self.authorized():
                 return self.reply(403)
+            if self.path == "/api/upload":
+                return self.upload()
             if self.path != "/api/command":
                 return self.reply(404)
             if self.headers.get("Content-Type") != "application/json":
@@ -170,7 +227,23 @@ def create_server(bridge, token, port=0):
                 command = json.loads(self.rfile.read(length))
                 if not isinstance(command, dict) or command.get("action") not in ACTIONS:
                     return self.reply(400)
-                if command.get("action") == "demoLogin":
+                if command.get("action") in ("sendAttachment", "discardUpload"):
+                    with bridge.upload_lock:
+                        entry = bridge.uploads.get(command.get("uploadId"))
+                        if not entry or entry["chatId"] != command.get("chatId") or bridge.snapshot().get("chatId") != entry["chatId"]:
+                            return self.reply(409)
+                        if command["action"] == "discardUpload":
+                            if entry.get("submitted"):
+                                return self.reply(409)
+                            Path(entry["path"]).unlink(missing_ok=True)
+                            bridge.uploads.pop(command["uploadId"])
+                            accepted = True
+                        else:
+                            accepted = bridge.command({**command, "path": entry["path"]})
+                            # Ambiguous response must retain the file for TDLib as well.
+                            if accepted is not False:
+                                entry["submitted"] = True
+                elif command.get("action") == "demoLogin":
                     if not bridge.synthetic:
                         return self.reply(403)
                     accepted = demo_login(bridge)

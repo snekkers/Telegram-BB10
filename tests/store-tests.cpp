@@ -71,6 +71,48 @@ private:
     }
 
 private slots:
+    void attachmentsValidatePathsFormatsPermissionsAndRecovery() {
+        Peer peer; ready(peer); open(peer);
+        const QString directory = peer.directory.path() + "/private/uploads";
+        QVERIFY(QDir().mkpath(directory));
+        QFile document(directory + "/note.txt"); QVERIFY(document.open(QIODevice::WriteOnly)); document.write("synthetic document"); document.close();
+        QVERIFY(peer.store.canSendMedia("document"));
+        QVERIFY(!peer.store.sendAttachment(peer.library, "document", "outside"));
+        QVERIFY(!peer.store.sendAttachment(directory + "/missing", "document", "missing"));
+        QVERIFY(QFile::link(document.fileName(), directory + "/link.txt"));
+        QVERIFY(!peer.store.sendAttachment(directory + "/link.txt", "document", "symlink"));
+        QVERIFY(!peer.store.sendAttachment(document.fileName(), "photo", "fake image", 0, 100, 100));
+        QVERIFY(!peer.store.sendAttachment(document.fileName(), "voice", "fake voice", 3));
+        QVERIFY(!peer.store.sendAttachment(document.fileName(), "document", QString(1025, 'x')));
+        QVERIFY(peer.store.sendAttachment(document.fileName(), "document", "deny"));
+        QTRY_VERIFY(!peer.store.sendBusy()); QTRY_VERIFY(!peer.store.failedAttachment().isEmpty());
+        QVERIFY(peer.store.failedDraft().isEmpty());
+        QCOMPARE(peer.store.failedAttachment().value("caption").toString(), QString("deny"));
+        QVERIFY(QFile::exists(document.fileName()));
+        QVERIFY(peer.store.sendAttachment(document.fileName(), "document", "fail-later"));
+        QTRY_VERIFY(!peer.store.sendBusy());
+        QTRY_COMPARE(peer.store.failedAttachment().value("caption").toString(), QString("fail-later"));
+        QVERIFY(peer.store.sendAttachment(document.fileName(), "document", "fail-before-response"));
+        QTRY_VERIFY(!peer.store.sendBusy());
+        QTRY_COMPARE(peer.store.failedAttachment().value("caption").toString(), QString("fail-before-response"));
+        QVERIFY(peer.store.sendAttachment(document.fileName(), "document", "caption"));
+        QTRY_VERIFY(!peer.store.sendBusy()); QTRY_VERIFY(peer.store.failedAttachment().isEmpty());
+        QVERIFY(QFile::exists(document.fileName()));
+        QFile voice(directory + "/voice.m4a"); QVERIFY(voice.open(QIODevice::WriteOnly)); voice.write(QByteArray::fromHex("00000018667479704d344120000000004d34412069736f6d")); voice.close();
+        QVERIFY(!peer.store.sendAttachment(voice.fileName(), "voice", "", 301));
+        QVERIFY(peer.store.sendAttachment(voice.fileName(), "voice", "", 2));
+        QTRY_VERIFY(!peer.store.sendBusy());
+        bool hasVoice = false;
+        foreach (const QVariant &value, peer.store.messages()) if (value.toMap().value("media").toMap().value("kind") == "voice") hasVoice = true;
+        QVERIFY(hasVoice);
+        QVariantMap event = object("updateChatPermissions"), permissions = object("chatPermissions");
+        permissions.insert("can_send_basic_messages", false); permissions.insert("can_send_documents", true);
+        event.insert("permissions", permissions); update(peer, event);
+        QVERIFY(!peer.store.canSend()); QVERIFY(peer.store.canSendMedia("document")); QVERIFY(!peer.store.canSendMedia("photo"));
+        QVERIFY(!peer.store.sendAttachment(voice.fileName(), "voice", "", 2));
+        open(peer, C); QVERIFY(!peer.store.canSendMedia("document"));
+    }
+
     void draftRestoreAndSearchLoadedChats() {
         Peer peer; ready(peer); open(peer);
         const QString draft = QString::fromUtf8("  Черновик 😀\nстрока 2  ");

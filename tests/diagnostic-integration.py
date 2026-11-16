@@ -94,6 +94,45 @@ def fixture_test():
             path.unlink()
             path.symlink_to(root / "libtdjson.so")
             assert request("/api/media/" + A + "/20")[0] == 404
+            path.unlink()
+            def upload(data, name="note.txt", *, auth=True, upload_chat=A, claimed_size=None):
+                headers = {"Origin": origin, "Content-Type": "application/octet-stream", "X-File-Name": name,
+                           "X-Chat-Id": upload_chat}
+                if auth: headers["Authorization"] = "Bearer " + token
+                if claimed_size: headers["Content-Length"] = str(claimed_size)
+                req = urllib.request.Request(origin + "/api/upload", data=data, headers=headers)
+                try:
+                    with urllib.request.urlopen(req, timeout=15) as response:
+                        return response.status, json.loads(response.read())
+                except urllib.error.HTTPError as error:
+                    return error.code, {}
+            assert upload(b"fixture", auth=False)[0] == 403
+            assert upload(b"fixture", upload_chat="9007199254740991")[0] == 409
+            assert upload(b"x", claimed_size=50*1024*1024+1)[0] == 413
+            code, uploaded = upload(b"synthetic document", "..%2Fnote.txt")
+            assert code == 200 and uploaded["name"] == "_note.txt"
+            attachment = {"action": "sendAttachment", "chatId": A, "uploadId": uploaded["uploadId"], "kind": "document", "caption": "deny"}
+            assert request(value={**attachment, "uploadId": "missing"})[0] == 409
+            assert request(value={**attachment, "chatId": "9007199254740991"})[0] == 409
+            assert request(value=attachment)[0] == 200
+            until(bridge, lambda s: s.get("failedAttachment", {}).get("caption") == "deny")
+            state_json = json.loads(request("/api/state")[1])
+            assert state_json["failedAttachment"]["uploadId"] == uploaded["uploadId"]
+            assert request(value={**attachment, "caption": "Документ"})[0] == 200
+            until(bridge, lambda s: any(m.get("media", {}).get("kind") == "document" for m in s.get("messages", [])))
+            assert request(value={"action": "discardUpload", "chatId": A, "uploadId": uploaded["uploadId"]})[0] == 409
+            image = __import__("base64").b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=")
+            code, photo = upload(image, "photo.png"); assert code == 200
+            assert request(value={**attachment, "uploadId": photo["uploadId"], "kind": "photo", "caption": "Фото"})[0] == 200
+            until(bridge, lambda s: any(m.get("messageId", "").startswith("600") and m.get("media", {}).get("kind") == "photo" for m in s.get("messages", [])))
+            code, voice = upload(bytes.fromhex("00000018667479704d344120000000004d34412069736f6d"), "voice.m4a"); assert code == 200
+            assert request(value={**attachment, "uploadId": voice["uploadId"], "kind": "voice", "duration": 2, "caption": ""})[0] == 200
+            state = until(bridge, lambda s: any(m.get("media", {}).get("kind") == "voice" for m in s.get("messages", [])))
+            voice_row = next(m for m in state["messages"] if m.get("media", {}).get("kind") == "voice")
+            assert request("/api/media/" + A + "/" + voice_row["messageId"])[0] == 200
+            code, cancelled = upload(b"discard me"); assert code == 200
+            assert request(value={"action": "discardUpload", "chatId": A, "uploadId": cancelled["uploadId"]})[0] == 200
+            assert request(value={**attachment, "uploadId": cancelled["uploadId"]})[0] == 409
             assert request(value={"action": "stop"})[0] == 200
             until(bridge, lambda s: s.get("phase") == "stopped")
             mode = (root / "private/api.json").stat().st_mode & 0o777
@@ -106,7 +145,8 @@ def fixture_test():
         return {"name": "native_bridge_and_http_fixture", "passed": True,
                 "checks": ["native Qt core lifecycle", "HTTP token, origin and host guards", "payload limits",
                            "API persistence permissions and snapshot redaction", "wrong-chat send rejected",
-                           "drafts and synthetic messages", "media download and path/symlink restrictions"]}
+                           "drafts and synthetic messages", "media download and path/symlink restrictions", "document, photo and voice upload/send",
+                           "upload authentication, size, chat binding, cancel and manual recovery"]}
 
 
 def real_test():

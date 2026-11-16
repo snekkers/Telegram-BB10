@@ -2,15 +2,27 @@
 #include <bb/system/InvokeRequest>
 #include <bb/system/FileTransferMode>
 #include <QUrl>
+#include <QFile>
+#include <QFileInfo>
+#include <QDir>
+#include <QUuid>
+#include <bb/multimedia/AudioChannelConfiguration>
+#include <bb/multimedia/MediaError>
+#include <bb/cascades/pickers/FileType>
 
 TelegramController::TelegramController(TelegramStore *store, QObject *parent)
     : QObject(parent), m_store(store), m_chats(new bb::cascades::ArrayDataModel(this)),
-      m_messages(new bb::cascades::ArrayDataModel(this)), m_scrollSerial(0)
+      m_messages(new bb::cascades::ArrayDataModel(this)), m_scrollSerial(0), m_recording(false)
 {
     connect(store, SIGNAL(chatsChanged()), this, SLOT(updateChats()));
     connect(store, SIGNAL(messagesChanged()), this, SLOT(updateMessages()));
     connect(store, SIGNAL(changed()), this, SIGNAL(changed()));
     connect(store, SIGNAL(scrollRequested()), this, SLOT(scroll()));
+    connect(&m_picker, SIGNAL(fileSelected(QStringList)), this, SLOT(fileSelected(QStringList)));
+    connect(&m_recorder, SIGNAL(error(bb::multimedia::MediaError::Type,unsigned int)), this, SLOT(recordingError()));
+    connect(&m_recordLimit, SIGNAL(timeout()), this, SLOT(finishRecording()));
+    connect(store, SIGNAL(changed()), this, SLOT(checkAttachmentChat()));
+    m_recordLimit.setSingleShot(true);
     updateChats();
     updateMessages();
 }
@@ -51,6 +63,125 @@ bool TelegramController::openMedia(const QString &id)
     request.setAction("bb.action.OPEN");
     request.setUri(QUrl::fromLocalFile(path));
     request.setMimeType(m_store->mediaMime(id));
+    request.setFileTransferMode(bb::system::FileTransferMode::CopyReadOnly);
+    return m_invoke.invoke(request) != 0;
+}
+
+QString TelegramController::newUploadPath(const QString &name)
+{
+    QDir uploads(m_store->uploadDirectory());
+    if (QFileInfo(uploads.absolutePath()).isSymLink() || !QDir().mkpath(uploads.absolutePath())) return QString();
+    QFile::setPermissions(uploads.absolutePath(), QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    // Keep inputs until TDLib has finished using them. Bound local retained copies.
+    qlonglong bytes = 0; int count = 0;
+    const QStringList directories = uploads.entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+    foreach (const QString &directory, directories) {
+        const QFileInfoList files = QDir(uploads.filePath(directory)).entryInfoList(QDir::Files);
+        foreach (const QFileInfo &file, files) { bytes += file.size(); ++count; }
+    }
+    if (count >= 32 || bytes >= 206 * 1024 * 1024) return QString();
+    const QString folder = uploads.filePath(QUuid::createUuid().toString().remove('{').remove('}'));
+    if (!QDir().mkpath(folder)) return QString();
+    QFile::setPermissions(folder, QFile::ReadOwner | QFile::WriteOwner | QFile::ExeOwner);
+    return QDir(folder).filePath(QFileInfo(name).fileName());
+}
+
+void TelegramController::chooseAttachment(const QString &kind)
+{
+    if (!m_store->canSendMedia(kind) || m_recording) return;
+    m_pickerChat = m_store->currentChatId(); m_pickerKind = kind;
+    m_picker.setType(kind == "photo" ? bb::cascades::pickers::FileType::Picture :
+        kind == "voice" ? bb::cascades::pickers::FileType::Music :
+        (bb::cascades::pickers::FileType::Picture | bb::cascades::pickers::FileType::Document |
+         bb::cascades::pickers::FileType::Music | bb::cascades::pickers::FileType::Video | bb::cascades::pickers::FileType::Other));
+    m_picker.open();
+}
+
+void TelegramController::fileSelected(const QStringList &files)
+{
+    if (files.isEmpty() || m_pickerChat != m_store->currentChatId() || !m_store->canSendMedia(m_pickerKind)) return;
+    QFileInfo input(files.first());
+    if (!input.isFile() || input.size() <= 0 || input.size() > 50 * 1024 * 1024) {
+        m_mediaError = QString::fromUtf8("Выберите непустой файл до 50 МБ."); emit changed(); return;
+    }
+    const QString target = newUploadPath(input.fileName());
+    if (target.isEmpty() || !QFile::copy(input.absoluteFilePath(), target)) {
+        m_mediaError = QString::fromUtf8("Не удалось скопировать вложение в каталог приложения."); emit changed(); return;
+    }
+    cancelAttachment();
+    QFile::setPermissions(target, QFile::ReadOwner | QFile::WriteOwner);
+    m_attachment.insert("path", target); m_attachment.insert("kind", m_pickerKind); m_attachmentChat = m_pickerChat;
+    // Imported voice files have unknown duration; use the recorder for voice notes.
+    if (m_pickerKind == "voice") m_mediaError = QString::fromUtf8("Для голосового используйте запись; готовый аудиофайл можно отправить как документ.");
+    emit changed();
+}
+
+void TelegramController::cancelAttachment()
+{
+    m_recordLimit.stop();
+    if (m_recording) { m_recording = false; m_recorder.reset(); }
+    // Only the currently unsent copy is removed; submitted files are retained for TDLib.
+    if (!m_attachment.value("retained").toBool()) QFile::remove(m_attachment.value("path").toString());
+    m_attachment.clear(); m_attachmentChat.clear(); m_mediaError.clear(); emit changed();
+}
+
+void TelegramController::checkAttachmentChat()
+{
+    if (!m_attachment.isEmpty() && (!m_store->ready() || m_attachmentChat != m_store->currentChatId())) cancelAttachment();
+}
+
+void TelegramController::toggleRecording()
+{
+    if (m_recording) { finishRecording(); return; }
+    if (!m_store->canSendMedia("voice")) return;
+    cancelAttachment();
+    const QString target = newUploadPath("voice.m4a");
+    if (target.isEmpty()) { m_mediaError = QString::fromUtf8("Недостаточно места для записи."); emit changed(); return; }
+    m_attachment.insert("path", target); m_attachment.insert("kind", "voice"); m_attachmentChat = m_store->currentChatId();
+    m_recorder.setOutputUrl(QUrl::fromLocalFile(target));
+    m_recorder.setAudioChannelConfiguration(bb::multimedia::AudioChannelConfiguration::Mono);
+    m_recording = true;
+    if (m_recorder.record() != bb::multimedia::MediaError::None) { recordingError(); return; }
+    m_recordLimit.start(300000); emit changed();
+}
+
+void TelegramController::finishRecording()
+{
+    if (!m_recording) return;
+    const int seconds = qMax(1, int((m_recorder.duration() + 999) / 1000));
+    m_recording = false; m_recordLimit.stop();
+    if (m_recorder.reset() != bb::multimedia::MediaError::None) { recordingError(); return; }
+    QFile::setPermissions(m_attachment.value("path").toString(), QFile::ReadOwner | QFile::WriteOwner);
+    m_attachment.insert("duration", seconds); emit changed();
+}
+
+void TelegramController::recordingError()
+{
+    cancelAttachment(); m_mediaError = QString::fromUtf8("Не удалось записать голос. Проверьте разрешение микрофона."); emit changed();
+}
+
+bool TelegramController::sendSelected(const QString &caption)
+{
+    if (m_attachment.isEmpty()) return m_store->sendText(caption);
+    if (m_recording || m_attachmentChat != m_store->currentChatId()) return false;
+    const bool sent = m_store->sendAttachment(m_attachment.value("path").toString(), m_attachment.value("kind").toString(),
+        caption, m_attachment.value("duration").toInt(), m_attachment.value("width").toInt(), m_attachment.value("height").toInt());
+    if (sent) { m_attachment.clear(); m_attachmentChat.clear(); emit changed(); }
+    return sent;
+}
+
+void TelegramController::recoverAttachment()
+{
+    if (m_store->failedAttachment().isEmpty()) return;
+    cancelAttachment(); m_attachment = m_store->failedAttachment(); m_attachment.insert("retained", true);
+    m_attachmentChat = m_store->currentChatId(); m_store->setDraft(m_attachment.value("caption").toString()); emit changed();
+}
+
+bool TelegramController::previewAttachment()
+{
+    if (m_recording || m_attachment.isEmpty()) return false;
+    bb::system::InvokeRequest request; request.setAction("bb.action.OPEN");
+    request.setUri(QUrl::fromLocalFile(m_attachment.value("path").toString()));
     request.setFileTransferMode(bb::system::FileTransferMode::CopyReadOnly);
     return m_invoke.invoke(request) != 0;
 }

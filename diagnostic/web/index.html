@@ -41,10 +41,13 @@
         <div class="chat-head"><div><h2 id="chat-title">Выберите чат</h2><span id="chat-hint" class="small muted">Переписка появится здесь</span></div><div class="row"><button id="mark-read" class="text" disabled>Прочитано</button><button id="history" class="secondary" disabled>Ранее</button></div></div>
         <p id="chat-error" class="error" role="alert"></p>
         <div id="messages" aria-live="polite"><p class="empty">Выберите переписку в списке слева.</p></div>
-        <div class="composer"><button id="recover" class="text" hidden>Вернуть неотправленный текст</button><form id="send-form"><textarea id="draft" aria-label="Сообщение" placeholder="Сообщение Telegram" maxlength="4096" rows="2" disabled></textarea><button id="send" type="submit" disabled>Отправить</button></form><p class="small muted">Enter — отправить · Shift+Enter — новая строка · ⌘F — поиск</p></div>
+        <div class="composer">
+          <div class="attachment-tools"><button id="attach" type="button" class="text" disabled>Прикрепить файл</button><button id="record" type="button" class="text" disabled>Записать голос</button><span id="record-status" class="small muted" role="status"></span><input id="file" type="file" hidden></div>
+          <div id="attachment" class="attachment-preview" hidden><div class="row"><strong id="attachment-name"></strong><select id="attachment-kind" aria-label="Тип вложения"><option value="document">Файл</option><option value="photo">Фото</option><option value="voice">Голосовое</option></select><button id="cancel-attachment" type="button" class="text">Убрать</button></div><img id="attachment-image" class="media" alt="Выбранное фото" hidden><audio id="attachment-audio" controls preload="metadata" hidden></audio><p class="small muted">Вложение уйдёт после нажатия «Отправить». Подпись — до 1024 символов.</p></div>
+          <button id="recover-attachment" type="button" class="text" hidden>Восстановить неотправленное вложение</button><button id="recover" class="text" hidden>Вернуть неотправленный текст</button><form id="send-form"><textarea id="draft" aria-label="Сообщение" placeholder="Сообщение Telegram" maxlength="4096" rows="2" disabled></textarea><button id="send" type="submit" disabled>Отправить</button></form><p class="small muted">Enter — отправить · Shift+Enter — новая строка · ⌘F — поиск</p></div>
       </section>
     </section>
   </main>
-  <footer><span id="local-error" role="alert"></span><span>Локальный стенд · 127.0.0.1 · 0.4.0</span></footer>
+  <footer><span id="local-error" role="alert"></span><span>Локальный стенд · 127.0.0.1 · 0.5.0</span></footer>
 </body>
 </html>
