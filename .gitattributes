@@ -1,5 +1,6 @@
 * text=auto
 *.cmd text eol=crlf
+*.sh text eol=lf
 *.cpp text eol=lf
 *.hpp text eol=lf
 *.qml text eol=lf

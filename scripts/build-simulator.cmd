@@ -18,6 +18,9 @@ call qmake -spec blackberry-x86-qcc -o build/simulator/Makefile berrygram.pro "C
 if errorlevel 1 goto build_failed
 call make -C build/simulator
 if errorlevel 1 goto build_failed
+if not exist "build\simulator\bin" mkdir "build\simulator\bin"
+copy /y "build\simulator\o-g\berrygram" "build\simulator\bin\berrygram" >nul
+if errorlevel 1 goto build_failed
 call blackberry-nativepackager -package build/simulator/berrygram-simulator.bar -devMode -configuration Simulator-Debug bar-descriptor.xml
 if errorlevel 1 goto build_failed
 

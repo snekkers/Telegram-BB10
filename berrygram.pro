@@ -14,7 +14,5 @@ OTHER_FILES += $$PWD/bar-descriptor.xml \
                $$PWD/assets/main.qml \
                $$PWD/assets/ChatPage.qml
 
-# Keep packaging paths independent of Momentics-generated makefiles.
-DESTDIR = $$OUT_PWD/bin
-OBJECTS_DIR = $$OUT_PWD/obj
-MOC_DIR = $$OUT_PWD/moc
+# The Cascades SDK chooses architecture-specific output directories for debug builds.
+# Build scripts stage the finished executable into bin/ for BAR packaging.

@@ -10,11 +10,31 @@
 NavigationPane. Данные живут в памяти и сбрасываются после завершения приложения.
 Интерфейс явно обозначает демонстрационный режим.
 
-**Подключения к Telegram пока нет. Сборка в BB10 SDK и запуск в симуляторе
-ещё не выполнены.** В доступном окружении Mac M1 нет BB10 SDK; Windows-ПК
-пользователя не подключён к этому рабочему окружению.
+**29 октября 2026 года обе сборки выполнены на Mac с M1** через Linux amd64
+контейнер с BlackBerry Native SDK 10.3.1.995:
+
+| Цель | Результат | Размер |
+| --- | --- | --- |
+| BB10 x86 Simulator-Debug | `build/simulator/berrygram-simulator.bar` | 248 528 байт |
+| BB10 ARMv7 Device-Debug | `build/device/berrygram-device.bar` | 249 671 байт |
+
+Проверены успешное завершение компилятора и упаковщика, целостность ZIP,
+архитектура ELF внутри каждого BAR, manifest и соответствие QML исходникам.
+Отчёт сохранён в `build/verification.json`.
+
+**Подключения к Telegram пока нет. Интерфейс в BB10 и установка на физический
+Classic ещё не проверены.** Это development-пакеты; сборка не подтверждает
+возможность установки на обычный телефон без подходящего способа загрузки BAR.
 
 ## Первый запуск
+
+Для Mac с M1 подготовлены [сборка через Docker и заметки по UTM](docs/macos-m1.md).
+С установленным и запущенным Docker Desktop:
+
+```sh
+bash scripts/build-docker.sh simulator
+bash scripts/build-docker.sh device
+```
 
 Для имеющегося Windows-ПК с Intel/AMD подготовлена
 [инструкция по SDK, симулятору и сборке](docs/windows-setup.md).
@@ -31,7 +51,8 @@ scripts\build-simulator.cmd
 
 ## Что дальше
 
-1. Собрать и запустить каркас в BB10 Device Simulator 10.3.1.
+1. Проверить запуск BB10 в UTM/QEMU на M1 либо использовать Device Simulator
+   на компьютере с Intel/AMD; установить собранный x86 BAR.
 2. Проверить квадратный экран, ввод текста, трекпад и Back/Menu в режиме Classic.
 3. Проверить возможность сборки актуального Telegram-движка для QNX/BB10.
    Нужны отдельные библиотеки для x86-симулятора и ARMv7-телефона.
@@ -50,11 +71,14 @@ scripts\build-simulator.cmd
 - `assets/main.qml`, `assets/ChatPage.qml` — нативные экраны.
 - `bar-descriptor.xml` — конфигурации x86 Simulator-Debug и ARMv7 Device-Debug.
 - `scripts/build-simulator.cmd` — сборка и упаковка под Windows.
+- `scripts/build-docker.sh`, `scripts/container-build.sh` — Linux SDK через Docker,
+  включая запуск x86-инструментов на Mac с M1.
 
 ## Проверенные источники
 
-Проверка ссылок и требований: 28 октября 2026 года. Это сведения из документации;
-совместимость установщиков с конкретной версией Windows пока не проверена.
+Проверка сборки на M1: 29 октября 2026 года. Ссылки на архивные установщики
+проверены 28 октября. Совместимость установщиков с конкретной версией Windows
+пока не проверена.
 
 - [Официальное руководство BB10 Device Simulator](https://developer.blackberry.com/devzone/files/develop/simulator/BB10_Device_Simulator_UG.pdf):
   запуск приложений без телефона, Controller, режим Classic с трекпадом и кнопками.
@@ -63,7 +87,10 @@ scripts\build-simulator.cmd
 - [Документация Qt по BB10](https://wiki.qt.io/Qt-Creator-with-BlackBerry-10):
   Cascades работает с Qt 4; mkspec симулятора — `blackberry-x86-qcc`.
 - [Ограничения VMware Fusion на Apple silicon](https://knowledge.broadcom.com/external/article/315602):
-  x86-гости не запускаются в Fusion на M1; для симулятора выбран Windows-ПК.
+  x86-гости не запускаются в Fusion на M1; UTM/QEMU — отдельный путь эмуляции.
+- [Сборка Term49C через Docker](https://github.com/jxw1102/Term49C#building-with-docker):
+  community-подход к запуску Linux SDK на Apple silicon. Собственная сборка
+  нашего приложения этим способом также проверена.
 - [TDLib](https://github.com/tdlib/td): актуальный исходный код и требования к сборке.
 - [Получение Telegram API ID](https://core.telegram.org/api/obtaining_api_id).
 - [Архивный проект arfeo/Telega](https://github.com/arfeo/Telega):
