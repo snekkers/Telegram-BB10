@@ -47,6 +47,8 @@ public:
     QString sendReady(QVariantMap object);
 
 signals:
+    void batchStarted();
+    void batchFinished();
     void changed();
     void eventReceived(const QVariantMap &object);
 
@@ -74,7 +76,7 @@ private:
     QString m_phase, m_status, m_error, m_version, m_pending, m_versionRequest, m_authorizationType;
     QByteArray m_input;
     unsigned m_sequence;
-    bool m_busy, m_stopping, m_failed;
+    bool m_busy, m_stopping, m_failed, m_readQueued;
     Q_DISABLE_COPY(TelegramSession)
 };
 #endif

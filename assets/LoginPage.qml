@@ -159,7 +159,7 @@ Page {
             Button { text: loginPage.showDetails ? qsTr("Скрыть сведения") : qsTr("Сведения о подключении"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: loginPage.showDetails = !loginPage.showDetails }
             Container {
                 visible: loginPage.showDetails
-                Label { text: "Telegram 0.14.0.18" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
+                Label { text: "Telegram 0.14.0.19" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
                 Label { text: qsTr("Сессия хранится на устройстве. Отключение сохраняет вход в аккаунт."); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
             }
         }

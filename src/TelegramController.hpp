@@ -169,6 +169,7 @@ public:
     Q_INVOKABLE void setSearchQuery(const QString &text) { m_store->setSearchQuery(text); }
     Q_INVOKABLE QString nextUnreadChat() { return m_store->nextUnreadChat(); }
     Q_INVOKABLE bool markRead() { return m_store->markRead(); }
+    Q_INVOKABLE void setFollowingLatest(bool value) { m_store->setFollowingLatest(value); }
     Q_INVOKABLE bool downloadMedia(const QString &id) { return m_store->downloadMedia(id); }
     Q_INVOKABLE bool openMedia(const QString &id);
     Q_INVOKABLE bool openLink(const QString &url);

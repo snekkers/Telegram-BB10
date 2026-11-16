@@ -34,7 +34,7 @@ void MediaController::select(int index){
 void MediaController::refresh(){
     if(m_id.isEmpty())return;if(m_live && m_chat!=m_store->currentChatId()){closePhoto();return;}
     const QString path=original();
-    if(!path.isEmpty()){const QString image=PhotoCache::scaled(path,folder(),1280);m_source=image;if(image.isEmpty())m_status=QString::fromUtf8("Не удалось открыть изображение.");}
+    if(!path.isEmpty() && m_source.isEmpty()){const QString image=PhotoCache::scaled(path,folder(),1280);m_source=image;if(image.isEmpty())m_status=QString::fromUtf8("Не удалось открыть изображение.");}
     if(m_source.isEmpty() && m_live && !m_store->errorText().isEmpty())m_status=m_store->errorText();
     emit changed();
 }

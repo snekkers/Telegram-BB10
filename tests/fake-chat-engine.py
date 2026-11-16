@@ -398,7 +398,10 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "pinFixture":
+        if op == "messageBurst":
+            events=[{"@type":"updateNewMessage","message":message(10000+query.get("event",{}).get("base",0)+i,A)} for i in range(600)]
+            sys.stdout.write("".join(json.dumps(e,ensure_ascii=False)+"\n" for e in events));sys.stdout.flush()
+        elif op == "pinFixture":
             pinned_enabled=True
         elif op == "unpinFixture":
             pinned_enabled=False

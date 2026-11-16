@@ -42,6 +42,7 @@ TelegramSession::TelegramSession(const QString &engine, const QString &library,
 void TelegramSession::initialize()
 {
     m_sequence = 0;
+    m_readQueued = false;
     m_busy = m_stopping = m_failed = false;
     m_phase = "stopped";
     m_status = available() ? ru("Движок остановлен")
@@ -247,7 +248,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.14.0.18");
+    parameters.insert("application_version", "0.14.0.19");
     return authenticate(parameters);
 }
 
@@ -349,10 +350,14 @@ bool TelegramSession::submit(const QString &value)
 
 void TelegramSession::readOutput()
 {
-    while (m_process.bytesAvailable() > 0) {
-        m_input.append(m_process.read(65536));
+    m_readQueued = false;
+    emit batchStarted();
+    int processed = 0;
+    while (processed < 64 && (m_process.bytesAvailable() > 0 || m_input.contains('\n'))) {
+        if (!m_input.contains('\n')) m_input.append(m_process.read(65536));
         int end;
-        while ((end = m_input.indexOf('\n')) >= 0) {
+        while (processed < 64 && (end = m_input.indexOf('\n')) >= 0) {
+            ++processed;
             QByteArray line = m_input.left(end);
             m_input.remove(0, end + 1);
             if (line.endsWith('\r'))
@@ -360,14 +365,21 @@ void TelegramSession::readOutput()
             QVariantMap object;
             if (line.size() > MaxLine || !JsonCodec::decode(line, &object)) {
                 fail(ru("Движок вернул некорректный ответ."));
+                emit batchFinished();
                 return;
             }
             handle(object);
         }
-        if (m_input.size() > MaxLine) {
+        if (m_input.size() > MaxLine && !m_input.contains('\n')) {
             fail(ru("Ответ движка превышает допустимый размер."));
+            emit batchFinished();
             return;
         }
+    }
+    emit batchFinished();
+    if (!m_readQueued && (m_process.bytesAvailable() > 0 || m_input.contains('\n'))) {
+        m_readQueued = true;
+        QTimer::singleShot(0, this, SLOT(readOutput()));
     }
 }
 
@@ -490,6 +502,9 @@ void TelegramSession::processError(QProcess::ProcessError error)
 
 void TelegramSession::finished(int code, QProcess::ExitStatus exitStatus)
 {
+    // readyRead can leave a bounded batch queued when the worker exits. Apply
+    // its final send results before notifying the store that it disconnected.
+    while (m_process.bytesAvailable()>0 || m_input.contains('\n')) readOutput();
     m_timer.stop();
     m_pending.clear();
     m_busy = false;

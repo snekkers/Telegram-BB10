@@ -220,7 +220,7 @@ Page {
                 LayoutUpdateHandler {
                     onLayoutFrameChanged: {messageList.rowWidth = layoutFrame.width;messageList.measuredHeight=layoutFrame.height;}
                 },
-                ListScrollStateHandler { id: historyScroll; objectName: "historyScroll"; onAtEndChanged: if(atEnd && navigation.top===chatPage)chatPage.pendingNewCount=0; onScrollingChanged: if(!scrolling && chatPage.liveChat && navigation.top===chatPage && !_live.loadingHistory)_ui.scheduleViewState(chatPage) },
+                ListScrollStateHandler { id: historyScroll; objectName: "historyScroll"; onAtEndChanged: {if(chatPage.liveChat)_live.setFollowingLatest(atEnd);if(atEnd && navigation.top===chatPage)chatPage.pendingNewCount=0;} onScrollingChanged: if(!scrolling && chatPage.liveChat && navigation.top===chatPage && !_live.loadingHistory)_ui.scheduleViewState(chatPage) },
                 AutoPager {
                     objectName: "historyPager"
                     enabled: chatPage.liveChat && navigation.top === chatPage && _live.canLoadHistory && _live.errorText.length === 0

@@ -113,6 +113,7 @@ public:
     QString nextUnreadChat() const;
     bool markRead();
     void setForeground(bool value);
+    void setFollowingLatest(bool value) { m_followingLatest=value; }
     bool downloadMedia(const QString &messageId);
     bool requestMediaProperties(const QString &messageId);
     QString mediaPath(const QString &messageId) const;
@@ -150,6 +151,8 @@ public slots:
     void flushDrafts();
 
 private slots:
+    void beginBatch();
+    void endBatch();
     void sessionChanged();
     void expireRequests();
     void peopleTick();
@@ -159,6 +162,8 @@ private:
     void reset();
     void rebuildChats();
     void rebuildMessages();
+    void requestScroll();
+    void notifyIncoming();
     void setPositions(QVariantMap *chat, const QVariantList &positions);
     void upsertMessage(const QVariantMap &message);
     QVariantMap messageRow(const QVariantMap &message) const;
@@ -201,6 +206,9 @@ private:
     QTimer m_expiry;
     QTimer m_draftTimer;
     QTimer m_peopleTimer;
+    bool m_batching, m_chatsDirty, m_messagesDirty;
+    bool m_followingLatest, m_scrollPending, m_historyLocalEnd;
+    int m_pendingIncoming;
     QElapsedTimer m_clock;
     int m_requestTimeoutMs;
     QMap<QString, QVariantMap> m_chats, m_users, m_requests, m_outbox;
@@ -236,6 +244,7 @@ private:
     QString m_storageSummary;
     QString m_current, m_error, m_connection, m_seenPhase, m_search, m_chatCategory, m_targetMessage;
     qlonglong m_historyCursor;
+    qlonglong m_lastReadSubmitted;
     unsigned m_generation;
     bool m_foreground;
     bool m_ready, m_loadingChats, m_loadingHistory, m_chatsEnd, m_historyEnd, m_online;

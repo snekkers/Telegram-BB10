@@ -91,6 +91,54 @@ private:
     }
 
 private slots:
+    void burstUpdatesAreBatchedAndAllMessagesArrive(){
+        Peer peer;ready(peer);open(peer);
+        QSignalSpy changed(&peer.store,SIGNAL(messagesChanged()));
+        QVERIFY(!control(peer,"messageBurst").isEmpty());
+        QTRY_VERIFY(!row(peer.store,"10599").isEmpty());
+        for(int i=0;i<600;++i)QVERIFY(!row(peer.store,QString::number(10000+i)).isEmpty());
+        QVERIFY2(changed.size()<150,"A burst must not rebuild the message list for every update");
+        open(peer,B);open(peer,A);QVERIFY(row(peer.store,"10599").isEmpty());
+    }
+    void expiredSendsDoNotBlockReadingHistory(){
+        Peer peer(100);ready(peer);open(peer);
+        for(int i=0;i<64;++i){QVERIFY(peer.store.sendText("timeout"));QTRY_VERIFY(!peer.store.sendBusy());}
+        open(peer,B);QVERIFY(!peer.store.loadingHistory());
+        QCOMPARE(control(peer,"stats").value("send_count").toInt(),64);
+    }
+    void longSessionKeepsRecentWindowAndPreservesOlderReading(){
+        Peer peer;ready(peer);open(peer);
+        for(int i=0;i<12;++i){QVariantMap fields;fields.insert("base",i*600);QVERIFY(!control(peer,"messageBurst",fields).isEmpty());}
+        QVERIFY(peer.store.messages().size()<=1000);
+        QVERIFY(!row(peer.store,"17199").isEmpty());
+        QVERIFY(peer.store.canLoadHistory());
+        peer.store.setFollowingLatest(false);
+        for(int i=12;i<15;++i){QVariantMap fields;fields.insert("base",i*600);QVERIFY(!control(peer,"messageBurst",fields).isEmpty());}
+        QVERIFY(peer.store.messages().size()>1000);
+        QVERIFY(!row(peer.store,"17199").isEmpty());
+    }
+    void reconnectResumesHistoryAfterLocalCacheEnds(){
+        Peer peer;ready(peer);open(peer);
+        QVariantMap event=object("updateConnectionState");event.insert("state",object("connectionStateWaitingForNetwork"));
+        QVERIFY(!control(peer,"emit",event).isEmpty());
+        peer.store.loadMoreHistory();QTRY_VERIFY(!peer.store.loadingHistory());
+        peer.store.loadMoreHistory();QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(!peer.store.canLoadHistory());
+        event.insert("state",object("connectionStateReady"));QVERIFY(!control(peer,"emit",event).isEmpty());
+        QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(!control(peer,"stats").value("last_only_local").toBool());
+    }
+    void lateLocalHistoryAfterReconnectStillRequestsNetwork(){
+        Peer peer;ready(peer);open(peer);
+        peer.store.loadMoreHistory();QTRY_VERIFY(!peer.store.loadingHistory());
+        QVariantMap event=object("updateConnectionState");event.insert("state",object("connectionStateWaitingForNetwork"));
+        QVERIFY(!control(peer,"emit",event).isEmpty());
+        QVERIFY(!control(peer,"holdHistory").isEmpty());peer.store.loadMoreHistory();
+        QVERIFY(peer.store.loadingHistory());
+        event.insert("state",object("connectionStateReady"));QVERIFY(!control(peer,"emit",event).isEmpty());
+        QVERIFY(!control(peer,"releaseHistory").isEmpty());QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(!control(peer,"stats").value("last_only_local").toBool());
+    }
     void scheduledSendStaysOutOfHistoryAndRetainsRejectedDraft(){
         Peer peer;ready(peer);open(peer);
         const uint now=QDateTime::currentDateTime().toTime_t();
