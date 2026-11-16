@@ -32,6 +32,13 @@ Safe Mode с профилем Classic 720×720 и смена CPU на Intel Neha
 Рабочий графический симулятор на M1 пока не получен; BAR в него не установлен.
 Конфигурации, источники и результаты описаны в [отчёте UTM](docs/utm-experiment.md).
 
+**Telegram-движок без GUI:** добавлен локальный процесс `berrygram-tdjson`.
+На M1 прошли восемь интеграционных сценариев с настоящей TDLib 1.8.69:
+начальное состояние авторизации, JSON-запросы, Unicode и закрытие клиента.
+Этот процесс также собран для BB10 x86 и ARMv7. Сама TDLib для QNX ещё
+не собрана; вход в аккаунт и подключение к интерфейсу не выполнены.
+[Проверка движка и следующие ограничения](docs/telegram-engine.md).
+
 ## Первый запуск
 
 Для Mac с M1 подготовлены [сборка через Docker и заметки по UTM](docs/macos-m1.md).
@@ -80,6 +87,9 @@ scripts\build-simulator.cmd
 - `scripts/build-simulator.cmd` — сборка и упаковка под Windows.
 - `scripts/build-docker.sh`, `scripts/container-build.sh` — Linux SDK через Docker,
   включая запуск x86-инструментов на Mac с M1.
+- `engine/tdjson-host.c` — отдельный процесс для JSON C API TDLib.
+- `scripts/build-telegram-host.sh` — сборка процесса для macOS, BB10 x86 и ARMv7.
+- `tests/telegram-host-integration.py` — проверки с настоящей TDLib без аккаунта.
 
 ## Проверенные источники
 
