@@ -3,9 +3,11 @@
     <id>org.example.berrygram</id>
     <name>Berrygram</name>
     <versionNumber>0.14.0</versionNumber>
-    <buildId>16</buildId>
+    <buildId>17</buildId>
     <description>Experimental native Telegram client for BlackBerry Classic.</description>
     <author>Berrygram Developer</author>
+
+    <icon><image>assets/icon.png</image></icon>
 
     <initialWindow>
         <aspectRatio>portrait</aspectRatio>

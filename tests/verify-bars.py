@@ -26,7 +26,8 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.14.0.16" in manifest
+            assert "Package-Version: 0.14.0.17" in manifest
+            assert "Entry-Point-Icon: native/assets/icon.png" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
             entry = next(line for line in manifest.splitlines() if line.startswith("Entry-Point: "))
@@ -35,6 +36,7 @@ def main():
                 assert archive.read("native/assets/" + source.name) == source.read_bytes()
                 for reference in re.findall(r'asset:///([^"\s]+)',source.read_text()):
                     assert "native/assets/"+reference in names, reference
+            assert archive.read("native/assets/icon.png") == (ROOT / "assets/icon.png").read_bytes()
             for source in (ROOT / "assets").rglob("*"):
                 if source.is_file() and source.suffix in {".js", ".png", ".amd", ".txt"}:
                     assert archive.read("native/assets/" + source.relative_to(ROOT / "assets").as_posix()) == source.read_bytes()

@@ -1,0 +1,1 @@
+The application icon is a 114 × 114 PNG rendered from Wikimedia Commons' “Telegram 2019 Logo.svg”. The file page identifies Telegram FZ LLC as the author and marks the image public domain, with a trademark notice: https://ru.wikipedia.org/wiki/Файл:Telegram_2019_Logo.svg
