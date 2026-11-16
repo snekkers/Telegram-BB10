@@ -1,4 +1,5 @@
 #include "TelegramStore.hpp"
+#include "MessagePresentation.hpp"
 #include "TelegramSession.hpp"
 
 #include <QDateTime>
@@ -652,9 +653,7 @@ void TelegramStore::rebuildMessages()
         else if (m_chats.contains(row.value("senderChatId").toString()))
             author = m_chats.value(row.value("senderChatId").toString()).value("title").toString();
         row.insert("author", author);
-        row.insert("time", QDateTime::fromTime_t(row.value("date").toUInt()).toString("dd.MM HH:mm"));
         row.insert("delivery", delivery(row));
-        row.remove("date");
         rows.append(row);
     }
     QList<QVariantMap> local;
@@ -665,6 +664,11 @@ void TelegramStore::rebuildMessages()
     }
     std::sort(local.begin(), local.end(), requestBefore);
     for (int i = 0; i < local.size(); ++i) rows.append(local.at(i));
+    const QVariantMap chat = m_chats.value(m_current);
+    const QString type = chat.value("type").toString();
+    rows = MessagePresentation::decorate(rows,
+        type == "chatTypeBasicGroup" || (type == "chatTypeSupergroup" && !chat.value("isChannel").toBool()),
+        chat.value("readInbox").toString(), chat.value("unreadCount").toInt() > 0);
     if (rows != m_messageRows) {
         m_messageRows = rows;
         emit messagesChanged();
@@ -715,6 +719,7 @@ bool TelegramStore::sendContent(const QVariantMap &content, const QString &text,
     row.insert("author", ru("Вы"));
     row.insert("text", text);
     row.insert("outgoing", true);
+    row.insert("date", QDateTime::currentDateTime().toTime_t());
     row.insert("time", QDateTime::currentDateTime().toString("dd.MM HH:mm"));
     row.insert("delivery", ru("Ожидание ответа движка…"));
     row.insert("edited", false);
@@ -947,10 +952,12 @@ void TelegramStore::consume(const QVariantMap &object)
         chat.insert("chatId", id);
         chat.insert("title", source.value("title"));
         chat.insert("type", source.value("type").toMap().value("@type"));
+        chat.insert("isChannel", source.value("type").toMap().value("is_channel"));
         chat.insert("topics", source.value("view_as_topics"));
         chat.insert("permissions", source.value("permissions"));
         chat.insert("canSend", source.value("permissions").toMap().value("can_send_basic_messages"));
         chat.insert("unreadCount", source.value("unread_count"));
+        chat.insert("readInbox", idString(source.value("last_read_inbox_message_id")));
         chat.insert("readOutbox", idString(source.value("last_read_outbox_message_id")));
         chat.insert("lastMessageId", idString(source.value("last_message").toMap().value("id")));
         chat.insert("lastDate", source.value("last_message").toMap().value("date"));
@@ -970,7 +977,11 @@ void TelegramStore::consume(const QVariantMap &object)
         QVariantMap &chat = m_chats[chatId];
         if (type == "updateChatTitle") chat.insert("title", object.value("title"));
         else if (type == "updateChatPermissions") { chat.insert("permissions", object.value("permissions")); chat.insert("canSend", object.value("permissions").toMap().value("can_send_basic_messages")); }
-        else if (type == "updateChatReadInbox") chat.insert("unreadCount", object.value("unread_count"));
+        else if (type == "updateChatReadInbox") {
+            chat.insert("unreadCount", object.value("unread_count"));
+            chat.insert("readInbox", idString(object.value("last_read_inbox_message_id")));
+            if (chatId == m_current) rebuildMessages();
+        }
         else if (type == "updateChatReadOutbox") chat.insert("readOutbox", idString(object.value("last_read_outbox_message_id")));
         else if (type == "updateChatViewAsTopics") chat.insert("topics", object.value("view_as_topics"));
         else if (type == "updateChatPosition") {

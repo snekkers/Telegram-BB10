@@ -5,7 +5,8 @@ TARGET = berrygram
 CONFIG += qt warn_on cascades10
 CONFIG -= debug_and_release
 CONFIG(debug, debug|release): DEFINES += BERRYGRAM_DEVELOPMENT_TEST_API
-QT += core declarative
+CONFIG(debug, debug|release): DEFINES += BERRYGRAM_UI_CHECKS
+QT += core declarative gui
 
 INCLUDEPATH += $$PWD/src
 SOURCES += $$PWD/src/main.cpp \
@@ -21,6 +22,10 @@ HEADERS += $$PWD/src/ChatController.hpp \
            $$PWD/src/TelegramController.hpp \
            $$PWD/src/JsonCodec.hpp
 HEADERS += $$PWD/src/PrivateFile.hpp
+HEADERS += $$PWD/src/MessagePresentation.hpp
+SOURCES += $$PWD/src/UiTools.cpp
+HEADERS += $$PWD/src/UiTools.hpp
+LIBS += -lscreen
 LIBS += -lbbdata -lbbsystem -lbbcascadespickers -lbbmultimedia
 OTHER_FILES += $$PWD/bar-descriptor.xml \
                $$PWD/assets/main.qml \

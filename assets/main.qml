@@ -26,15 +26,17 @@ NavigationPane {
         titleBar: AppHeader {
             caption: navigation.live || navigation.demo ? qsTr("Чаты") : "Berrygram"
             detail: navigation.live ? _live.connectionStatus : navigation.demo ? qsTr("Демо · без подключения") : qsTr("Telegram для BlackBerry Classic")
+            compact: navigation.live || navigation.demo
         }
         shortcuts: [
             SystemShortcut { type: SystemShortcuts.Search; enabled: navigation.live; onTriggered: { navigation.showSearch = true; chatSearch.requestFocus(); } },
             Shortcut { key: "s"; enabled: navigation.live && !chatSearch.focused; onTriggered: { navigation.showSearch = true; chatSearch.requestFocus(); } },
-            Shortcut { key: "u"; enabled: navigation.live && !chatSearch.focused; onTriggered: navigation.openChatById(_live.nextUnreadChat()) }
+            Shortcut { key: "u"; enabled: navigation.live && !chatSearch.focused; onTriggered: navigation.openChatById(_live.nextUnreadChat()) },
+            Shortcut { key: "Escape"; enabled: navigation.showSearch; onTriggered: { navigation.showSearch = false; chatSearch.text = ""; chatList.requestFocus(); } }
         ]
         actions: [
-            ActionItem { title: qsTr("Поиск"); enabled: navigation.live; ActionBar.placement: ActionBarPlacement.OnBar; onTriggered: { navigation.showSearch = !navigation.showSearch; if (navigation.showSearch) chatSearch.requestFocus(); else chatSearch.text = ""; } },
-            ActionItem { title: navigation.live ? qsTr("Подключение") : qsTr("Войти в Telegram"); ActionBar.placement: ActionBarPlacement.OnBar; onTriggered: navigation.openLogin() },
+            ActionItem { title: qsTr("Поиск"); imageSource: "asset:///icons/search-white.png"; enabled: navigation.live; ActionBar.placement: ActionBarPlacement.OnBar; onTriggered: { navigation.showSearch = !navigation.showSearch; if (navigation.showSearch) chatSearch.requestFocus(); else chatSearch.text = ""; } },
+            ActionItem { title: navigation.live ? qsTr("Подключение") : qsTr("Войти в Telegram"); imageSource: "asset:///icons/settings-white.png"; ActionBar.placement: ActionBarPlacement.InOverflow; onTriggered: navigation.openLogin() },
             ActionItem { title: qsTr("Выйти из демо"); enabled: navigation.demo && !navigation.live; onTriggered: { navigation.demo = false; navigation.showSearch = false; } }
         ]
         Container {
@@ -81,6 +83,9 @@ NavigationPane {
         }
     }
     attachedObjects: [ ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" } ]
+    onPushTransitionEnded: {
+        if (page.objectName === "chatPage" && page.focusComposer !== undefined) page.focusComposer();
+    }
     onPopTransitionEnded: {
         if (page.objectName === "chatPage") { if (page.liveChat) _live.closeChat(); else _chat.closeChat(); }
         page.destroy();

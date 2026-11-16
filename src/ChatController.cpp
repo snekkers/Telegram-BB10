@@ -1,4 +1,5 @@
 #include "ChatController.hpp"
+#include "MessagePresentation.hpp"
 
 #include <bb/cascades/ItemGrouping>
 #include <QDateTime>
@@ -6,14 +7,17 @@
 
 namespace {
 
-QVariantMap message(const QString &author, const QString &text, bool outgoing, int order)
+QVariantMap message(const QString &author, const QString &text, bool outgoing, int order,
+                    const QDateTime &date = QDateTime::currentDateTime())
 {
     QVariantMap row;
     row.insert("author", author);
     row.insert("text", text);
     row.insert("outgoing", outgoing);
     row.insert("order", order);
-    row.insert("time", QDateTime::currentDateTime().toString("HH:mm"));
+    row.insert("date", date.toTime_t());
+    row.insert("messageId", QString::number(order + 1));
+    row.insert("time", date.toString("HH:mm"));
     return row;
 }
 
@@ -69,9 +73,15 @@ void ChatController::addDemoChat(const QString &id, const QString &title,
     m_chatRows.append(row);
 
     QVariantList history;
-    history.append(message(title, text, false, 0));
-    history.append(message(QString::fromUtf8("Вы"), QString::fromUtf8("Да, отлично!"), true, 1));
-    history.append(message(title, QString::fromUtf8("Это демонстрационная переписка. Здесь можно проверить внешний вид и ввод с клавиатуры."), false, 2));
+    const QDateTime now = QDateTime::currentDateTime();
+    const QString author = id == "demo-project" ? QString::fromUtf8("Анна") : title;
+    history.append(message(author, QString::fromUtf8("Завтра продолжим?"), false, 0, now.addDays(-1).addSecs(-60)));
+    history.append(message(QString::fromUtf8("Вы"), QString::fromUtf8("Да, договорились."), true, 1, now.addDays(-1)));
+    history.append(message(author, text, false, 2, now.addSecs(-300)));
+    history.append(message(author, QString::fromUtf8("Как тебе новый интерфейс?"), false, 3, now.addSecs(-280)));
+    history.append(message(QString::fromUtf8("Вы"), QString::fromUtf8("Стало удобнее писать с клавиатуры."), true, 4, now.addSecs(-240)));
+    history.append(message(QString::fromUtf8("Вы"), QString::fromUtf8("И больше места для сообщений."), true, 5, now.addSecs(-225)));
+    history.append(message(author, QString::fromUtf8("Это демо: здесь можно проверить ввод и внешний вид без отправки в Telegram."), false, 6, now.addSecs(-180)));
     m_history.insert(id, history);
 }
 
@@ -81,6 +91,15 @@ void ChatController::refreshChats()
     for (int i = 0; i < m_chatRows.size(); ++i) {
         m_chats->insert(m_chatRows.at(i).toMap());
     }
+}
+
+void ChatController::refreshMessages()
+{
+    m_messages->clear();
+    const QVariantList rows = MessagePresentation::decorate(m_history.value(m_currentChatId),
+        m_currentChatId == "demo-project" || m_currentChatId == "demo-bb10",
+        "2", m_currentChatId == "demo-anna");
+    for (int i = 0; i < rows.size(); ++i) m_messages->insert(rows.at(i).toMap());
 }
 
 bool ChatController::openChat(const QString &chatId)
@@ -98,11 +117,7 @@ bool ChatController::openChat(const QString &chatId)
         }
     }
 
-    m_messages->clear();
-    const QVariantList history = m_history.value(chatId);
-    for (int i = 0; i < history.size(); ++i) {
-        m_messages->insert(history.at(i).toMap());
-    }
+    refreshMessages();
     emit currentChatChanged();
     return true;
 }
@@ -126,7 +141,7 @@ bool ChatController::sendDemoMessage(const QString &text)
     const QVariantMap row = message(QString::fromUtf8("Вы · локально"), body,
                                    true, history.size());
     history.append(row);
-    m_messages->insert(row);
+    refreshMessages();
 
     for (int i = 0; i < m_chatRows.size(); ++i) {
         QVariantMap chat = m_chatRows.at(i).toMap();

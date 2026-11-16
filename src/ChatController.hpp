@@ -34,6 +34,7 @@ private:
     void addDemoChat(const QString &id, const QString &title,
                      const QString &text, int order);
     void refreshChats();
+    void refreshMessages();
 
     bb::cascades::GroupDataModel *m_chats;
     bb::cascades::GroupDataModel *m_messages;

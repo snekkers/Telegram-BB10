@@ -2,6 +2,7 @@
 #include "TelegramStore.hpp"
 #include "LocalOutbox.hpp"
 #include "PrivateFile.hpp"
+#include "MessagePresentation.hpp"
 #include <QtTest>
 #include <QTemporaryDir>
 #include <QFile>
@@ -84,6 +85,51 @@ private:
     }
 
 private slots:
+    void messagePresentationGroupsOnlyMatchingAuthorsAndDates() {
+        const QDate today(2026,11,13);
+        const QDateTime yesterday(today.addDays(-1),QTime(18,0));
+        const QDateTime morning(today,QTime(9,0));
+        QVariantList source;
+        for(int i=0;i<5;++i) {
+            QVariantMap message;
+            message.insert("messageId",QString::number(i+1));
+            message.insert("senderId",i==4?"200":"100");
+            message.insert("author","Same display name");message.insert("outgoing",false);
+            message.insert("date",(i<2?yesterday.addSecs(i*20):morning.addSecs((i-2)*20)).toTime_t());
+            source.append(message);
+        }
+        QVariantList group=MessagePresentation::decorate(source,true,"2",true,today);
+        QCOMPARE(group.at(0).toMap().value("dateLabel").toString(),QString::fromUtf8("Вчера"));
+        QVERIFY(group.at(0).toMap().value("showAuthor").toBool());
+        QVERIFY(group.at(1).toMap().value("joinedPrevious").toBool());
+        QVERIFY(!group.at(1).toMap().value("showAuthor").toBool());
+        QCOMPARE(group.at(2).toMap().value("dateLabel").toString(),QString::fromUtf8("Сегодня"));
+        QVERIFY(group.at(2).toMap().value("startsDay").toBool());
+        QVERIFY(group.at(2).toMap().value("startsUnread").toBool());
+        QVERIFY(!group.at(3).toMap().value("startsUnread").toBool());
+        QVERIFY(group.at(3).toMap().value("joinedPrevious").toBool());
+        QVERIFY(!group.at(4).toMap().value("joinedPrevious").toBool());
+        QVERIFY(group.at(4).toMap().value("showAuthor").toBool());
+        const QVariantList personal=MessagePresentation::decorate(source,false,"2",true,today);
+        for(int i=0;i<personal.size();++i) QVERIFY(!personal.at(i).toMap().value("showAuthor").toBool());
+        QCOMPARE(personal.at(2).toMap().value("time").toString(),QString("09:00"));
+    }
+
+    void messagePresentationBreaksLongPausesAndUnreadBoundaries() {
+        const QDateTime start(QDate(2026,11,13),QTime(12,0));
+        QVariantList source;
+        for(int i=0;i<4;++i) {
+            QVariantMap message;message.insert("messageId",QString::number(i+1));
+            message.insert("senderId","100");message.insert("outgoing",false);
+            message.insert("date",start.addSecs(i==0?0:300+i).toTime_t());source.append(message);
+        }
+        const QVariantList rows=MessagePresentation::decorate(source,true,"2",true,start.date());
+        QVERIFY(!rows.at(1).toMap().value("joinedPrevious").toBool());
+        QVERIFY(rows.at(2).toMap().value("startsUnread").toBool());
+        QVERIFY(!rows.at(2).toMap().value("joinedPrevious").toBool());
+        QVERIFY(rows.at(3).toMap().value("joinedPrevious").toBool());
+    }
+
     void journalSurvivesRestartAndSeparatesAccounts() {
         QTemporaryDir directory; const QString data = directory.path() + "/private";
         const QString file = payload(data); QString id;

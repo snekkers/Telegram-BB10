@@ -4,6 +4,7 @@ import "Ui.js" as Ui
 Page {
     id: chatPage
     objectName: "chatPage"
+    actionBarVisibility: ChromeVisibility.Hidden
     property bool liveChat: false
     property int scrollSerial: _live.scrollSerial
     onLiveChatChanged: {
@@ -32,6 +33,8 @@ Page {
     }
 
     function submitDraft() {
+        if (messageField.text.trim().length === 0 && (!liveChat || _live.attachmentName.length === 0)) return;
+        if (liveChat && !_live.canSendSelected) return;
         var accepted = liveChat ? _live.sendSelected(messageField.text) : _chat.sendDemoMessage(messageField.text);
         if (accepted) {
             messageField.text = "";
@@ -39,6 +42,7 @@ Page {
             messageField.requestFocus();
         }
     }
+    function focusComposer() { messageField.requestFocus(); }
     function nextUnread() {
         var id = _live.nextUnreadChat();
         if (id.length > 0 && _live.openChat(id)) {
@@ -49,38 +53,50 @@ Page {
 
     titleBar: AppHeader {
         caption: chatPage.liveChat ? (_live.currentChatTitle || "Telegram") : _chat.currentChatTitle
-        detail: chatPage.liveChat ? _live.connectionStatus : qsTr("Демо · сообщения остаются на устройстве")
+        detail: chatPage.liveChat ? _live.connectionStatus : qsTr("Демо · без отправки в Telegram")
+        compact: true
+        menuVisible: true
+        onMenuRequested: _ui.openMenu(chatPage)
     }
     actions: [
-        ActionItem { title: qsTr("Очистить старые копии"); enabled: chatPage.liveChat && _live.ready; onTriggered: _live.cleanupUploads() },
-        ActionItem { ActionBar.placement: ActionBarPlacement.OnBar; title: qsTr("Прикрепить"); enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("document") },
-        ActionItem { title: qsTr("Отправить фото"); enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("photo") },
-        ActionItem { title: _live.recording ? qsTr("Завершить запись") : qsTr("Записать голос"); enabled: chatPage.liveChat && _live.canAttach; onTriggered: _live.toggleRecording() },
+        ActionItem { title: qsTr("Документ"); imageSource: "asset:///icons/attach-white.png"; enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("document") },
+        ActionItem { title: qsTr("Фото"); imageSource: "asset:///icons/photo-white.png"; enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("photo") },
+        ActionItem { title: _live.recording ? qsTr("Остановить запись") : qsTr("Голосовое"); imageSource: "asset:///icons/voice-white.png"; enabled: chatPage.liveChat && _live.canAttach; onTriggered: _live.toggleRecording() },
         ActionItem {
-            title: qsTr("Ранее")
+            title: qsTr("История")
+            imageSource: "asset:///icons/history-white.png"
             enabled: chatPage.liveChat && _live.canLoadHistory
             onTriggered: _live.loadMoreHistory()
         },
         ActionItem {
             title: qsTr("Вниз")
+            imageSource: "asset:///icons/down-white.png"
             onTriggered: messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.Default)
         },
         ActionItem {
-            title: qsTr("Следующий непрочитанный")
+            title: qsTr("Непрочитанный")
+            imageSource: "asset:///icons/unread-white.png"
             enabled: chatPage.liveChat && _live.ready
             onTriggered: chatPage.nextUnread()
             shortcuts: [ Shortcut { key: "Alt+u" } ]
         },
         ActionItem {
             title: qsTr("Отметить прочитанным")
+            imageSource: "asset:///icons/read-white.png"
             enabled: chatPage.liveChat && _live.ready
             onTriggered: _live.markRead()
-        }
+        },
+        ActionItem { title: qsTr("Очистить копии"); imageSource: "asset:///icons/cleanup-white.png"; enabled: chatPage.liveChat && _live.ready; onTriggered: _live.cleanupUploads() }
     ]
 
     Container {
+        id: chatContent
+        objectName: "chatContent"
+        property real measuredHeight: 0
         background: Color.create(Ui.canvas)
         horizontalAlignment: HorizontalAlignment.Fill
+        verticalAlignment: VerticalAlignment.Fill
+        attachedObjects: [ LayoutUpdateHandler { onLayoutFrameChanged: chatContent.measuredHeight = layoutFrame.height } ]
 
         Label {
             visible: chatPage.liveChat && _live.loadingHistory
@@ -109,6 +125,7 @@ Page {
             ]
             function downloadMedia(id) { _live.downloadMedia(id); }
             function openMedia(id) { _live.openMedia(id); }
+            function copyText(text) { _ui.copyText(text); }
             dataModel: chatPage.liveChat ? _live.messages : _chat.messages
             layoutProperties: StackLayoutProperties {
                 spaceQuota: 1
@@ -129,20 +146,54 @@ Page {
                         preferredWidth: messageItem.ListItem.view.rowWidth
                         minWidth: preferredWidth
                         maxWidth: preferredWidth
-                        layout: DockLayout {}
-                        leftPadding: ListItemData.outgoing ? ui.du(9) : ui.du(1.4)
-                        rightPadding: ListItemData.outgoing ? ui.du(1.4) : ui.du(9)
-                        topPadding: ui.du(0.5)
-                        bottomPadding: ui.du(0.5)
                         horizontalAlignment: HorizontalAlignment.Fill
+                        Label {
+                            visible: ListItemData.startsDay === true
+                            text: ListItemData.dateLabel || ""
+                            textStyle.base: SystemDefaults.TextStyles.SmallText
+                            textStyle.color: Color.create(Ui.secondary)
+                            horizontalAlignment: HorizontalAlignment.Center
+                            topMargin: ui.du(1.2); bottomMargin: ui.du(1)
+                        }
                         Container {
+                            visible: ListItemData.startsUnread === true
+                            background: Color.create("#dce8ef")
+                            horizontalAlignment: HorizontalAlignment.Fill
+                            topPadding: ui.du(0.6); bottomPadding: ui.du(0.6)
+                            topMargin: ui.du(0.5); bottomMargin: ui.du(0.7)
+                            Label {
+                                text: qsTr("Непрочитанные сообщения")
+                                horizontalAlignment: HorizontalAlignment.Center
+                                textStyle.base: SystemDefaults.TextStyles.SmallText
+                                textStyle.color: Color.create(Ui.blue)
+                            }
+                        }
+                        Container {
+                            layout: DockLayout {}
+                            horizontalAlignment: HorizontalAlignment.Fill
+                            leftPadding: ListItemData.outgoing ? ui.du(9) : ui.du(1.2)
+                            rightPadding: ListItemData.outgoing ? ui.du(1.2) : ui.du(9)
+                            topPadding: ListItemData.joinedPrevious === true ? ui.du(0.15) : ui.du(0.65)
+                            bottomPadding: ui.du(0.15)
+                            Container {
                             background: ListItemData.outgoing ? outgoingPaint.imagePaint : incomingPaint.imagePaint
                             horizontalAlignment: ListItemData.outgoing ? HorizontalAlignment.Right : HorizontalAlignment.Left
-                            maxWidth: Math.min(ui.du(56), messageItem.ListItem.view.rowWidth - ui.du(12))
+                            maxWidth: Math.min(ui.du(58), messageItem.ListItem.view.rowWidth - ui.du(11))
                             leftPadding: ui.du(1.8); rightPadding: ui.du(1.8)
-                            topPadding: ui.du(1.2); bottomPadding: ui.du(1)
+                            topPadding: ui.du(0.9); bottomPadding: ui.du(0.6)
+                            contextActions: [
+                                ActionSet {
+                                    title: qsTr("Сообщение")
+                                    ActionItem {
+                                        title: qsTr("Копировать текст")
+                                        imageSource: "asset:///icons/copy-white.png"
+                                        enabled: (ListItemData.text || "").length > 0
+                                        onTriggered: messageItem.ListItem.view.copyText(ListItemData.text)
+                                    }
+                                }
+                            ]
                             Label {
-                                visible: !ListItemData.outgoing
+                                visible: ListItemData.showAuthor === true
                                 text: ListItemData.author
                                 textFormat: TextFormat.Plain
                                 textStyle.base: SystemDefaults.TextStyles.SmallText
@@ -156,7 +207,8 @@ Page {
                                 textFormat: TextFormat.Plain
                                 multiline: true
                                 textStyle.color: Color.create(Ui.ink)
-                                maxWidth: ui.du(51)
+                                maxWidth: Math.min(ui.du(54), messageItem.ListItem.view.rowWidth - ui.du(15))
+                                topMargin: 0; bottomMargin: 0
                             }
                             ImageView {
                                 visible: ListItemData.media !== undefined && ListItemData.media.kind === "photo" && ListItemData.media.localUrl.length > 0
@@ -180,8 +232,10 @@ Page {
                                 textFormat: TextFormat.Plain
                                 multiline: true
                                 textStyle.base: SystemDefaults.TextStyles.SmallText
-                                textStyle.color: Color.create("#698475")
+                                textStyle.color: Color.create(ListItemData.outgoing ? "#698475" : Ui.secondary)
                                 horizontalAlignment: HorizontalAlignment.Right
+                                topMargin: ui.du(0.2); bottomMargin: 0
+                            }
                             }
                         }
                         attachedObjects: [
@@ -219,20 +273,52 @@ Page {
         }
 
         Container {
+            id: composer
+            objectName: "composer"
+            property real measuredTop: 0
+            property real measuredHeight: 0
             layout: StackLayout {
                 orientation: LayoutOrientation.LeftToRight
             }
             background: Color.White
             leftPadding: ui.du(1.2)
-            rightPadding: ui.du(1.2)
-            topPadding: ui.du(1)
-            bottomPadding: ui.du(1)
+            rightPadding: ui.du(0.7)
+            topPadding: ui.du(0.7)
+            bottomPadding: ui.du(0.7)
+            attachedObjects: [
+                LayoutUpdateHandler {
+                    onLayoutFrameChanged: { composer.measuredTop = layoutFrame.y; composer.measuredHeight = layoutFrame.height; }
+                }
+            ]
+            ImageButton {
+                objectName: "attachmentButton"
+                preferredWidth: ui.du(6.8); preferredHeight: ui.du(6.8)
+                minWidth: preferredWidth; maxWidth: preferredWidth
+                verticalAlignment: VerticalAlignment.Bottom
+                defaultImageSource: "asset:///icons/attach-normal.png"
+                pressedImageSource: "asset:///icons/attach-pressed.png"
+                disabledImageSource: "asset:///icons/attach-disabled.png"
+                enabled: chatPage.liveChat && _live.canAttach && !_live.recording
+                opacity: enabled ? 1 : 0.45
+                accessibility.name: qsTr("Прикрепить фото, документ или голосовое сообщение")
+                onClicked: _ui.openMenu(chatPage)
+            }
 
-            TextField {
+            TextArea {
                 id: messageField
                 objectName: "messageField"
+                property real measuredHeight: 0
                 hintText: chatPage.liveChat ? _live.composerHint : qsTr("Сообщение · демо")
                 enabled: !chatPage.liveChat || _live.canSendSelected
+                inputMode: TextAreaInputMode.Chat
+                autoSize.maxLineCount: 4
+                scrollMode: TextAreaScrollMode.Stiff
+                verticalAlignment: VerticalAlignment.Bottom
+                shortcuts: [
+                    Shortcut { objectName: "sendShortcut"; key: "Enter"; onTriggered: chatPage.submitDraft() },
+                    Shortcut { objectName: "newlineShortcut"; key: "Shift+Enter"; onTriggered: messageField.editor.insertPlainText("\n") }
+                ]
+                attachedObjects: [ LayoutUpdateHandler { onLayoutFrameChanged: messageField.measuredHeight = layoutFrame.height } ]
                 onTextChanged: {
                     if (chatPage.liveChat) _live.setDraft(text);
                 }
@@ -241,17 +327,24 @@ Page {
                 }
                 input {
                     submitKey: SubmitKey.Send
+                    submitKeyFocusBehavior: SubmitKeyFocusBehavior.Keep
                     onSubmitted: {
                         if (!chatPage.liveChat || _live.canSendSelected) chatPage.submitDraft();
                     }
                 }
             }
 
-            Button {
-                preferredWidth: ui.du(20)
-                maxWidth: ui.du(20)
-                text: qsTr("Отправить")
+            ImageButton {
+                objectName: "sendButton"
+                preferredWidth: ui.du(7.2); preferredHeight: ui.du(6.8)
+                minWidth: preferredWidth; maxWidth: preferredWidth
+                verticalAlignment: VerticalAlignment.Bottom
+                defaultImageSource: "asset:///icons/send-normal.png"
+                pressedImageSource: "asset:///icons/send-pressed.png"
+                disabledImageSource: "asset:///icons/send-disabled.png"
+                accessibility.name: qsTr("Отправить сообщение")
                 enabled: (messageField.text.trim().length > 0 || (chatPage.liveChat && _live.attachmentName.length > 0)) && (!chatPage.liveChat || _live.canSendSelected)
+                opacity: enabled ? 1 : 0.45
                 onClicked: chatPage.submitDraft()
             }
         }

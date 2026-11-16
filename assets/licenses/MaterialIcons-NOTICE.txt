@@ -1,0 +1,31 @@
+Google Material Design Icons — Apache License 2.0.
+Source: https://github.com/google/material-design-icons
+License: MaterialIcons-Apache-2.0.txt
+Changes: added transparent padding, recolored states and rendered to 88x88 PNG.
+
+send: https://raw.githubusercontent.com/google/material-design-icons/master/src/content/send/materialicons/24px.svg
+Original SVG SHA-256: 9b8c4252dd3956aa029ef1395e1b7c0627e908b98fb74dd36394458ac8f152db
+attach: https://raw.githubusercontent.com/google/material-design-icons/master/src/editor/attach_file/materialicons/24px.svg
+Original SVG SHA-256: 9ac55ccb123d8048441f516e81fd7b2653cc023d9159d12280598d6d2a71927b
+more: https://raw.githubusercontent.com/google/material-design-icons/master/src/navigation/more_vert/materialicons/24px.svg
+Original SVG SHA-256: 4f59e208f5babcf58c07505356ca1f109a9e1972e839b991dff19f709a28eeba
+photo: https://raw.githubusercontent.com/google/material-design-icons/master/src/image/photo/materialicons/24px.svg
+Original SVG SHA-256: 6cb8813b8bd05133f2871ff948814cb258c599d5931e2a4e9bf165675d99fc07
+voice: https://raw.githubusercontent.com/google/material-design-icons/master/src/av/mic/materialicons/24px.svg
+Original SVG SHA-256: 2597239521622c3e8f1880df5f7223d3caefc6da148eda11af47e82810192279
+history: https://raw.githubusercontent.com/google/material-design-icons/master/src/action/history/materialicons/24px.svg
+Original SVG SHA-256: 3d63bf10617ed68dde0d0c99d5d38892317a6439d6582f30b08bc3727cb26f14
+down: https://raw.githubusercontent.com/google/material-design-icons/master/src/navigation/arrow_downward/materialicons/24px.svg
+Original SVG SHA-256: 61643262c55c5fe4022407585d2609a7e3e73420ff93267931148a5eb9782790
+unread: https://raw.githubusercontent.com/google/material-design-icons/master/src/content/markunread/materialicons/24px.svg
+Original SVG SHA-256: b7c7b51f3cbd8b13183ac99b71b238be3c68f0b7763e49828ac5fedf3fadc8c5
+read: https://raw.githubusercontent.com/google/material-design-icons/master/src/action/done_all/materialicons/24px.svg
+Original SVG SHA-256: ab638eee38e46129552d79463b36a387b10e7739c940d02c6d630d12e0f82b47
+cleanup: https://raw.githubusercontent.com/google/material-design-icons/master/src/action/delete_outline/materialicons/24px.svg
+Original SVG SHA-256: d8a008dbf82f57c53a1edacf5b8e3302e465d94706561423dce7a60846f57735
+copy: https://raw.githubusercontent.com/google/material-design-icons/master/src/content/content_copy/materialicons/24px.svg
+Original SVG SHA-256: 6f6b2c7038f181364540792ce558bbf09980b0204b2faee0f3964ec100b4739e
+search: https://raw.githubusercontent.com/google/material-design-icons/master/src/action/search/materialicons/24px.svg
+Original SVG SHA-256: c25d4cdca9972ef7ed9f8e9f32553d0444afd6a7cf8cc6ca9eebf5b4073ef308
+settings: https://raw.githubusercontent.com/google/material-design-icons/master/src/action/settings/materialicons/24px.svg
+Original SVG SHA-256: 86a35d4b8dd844c6a89f6b195b1600367cb52b8465847a0e7bbc8b3365c3983d

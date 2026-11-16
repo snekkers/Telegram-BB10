@@ -6,13 +6,13 @@ CustomListItem {
     property variant row
     dividerVisible: true
     highlightAppearance: HighlightAppearance.Full
-    preferredHeight: ui.du(11.6)
+    preferredHeight: ui.du(10.4)
     Container {
         layout: StackLayout { orientation: LayoutOrientation.LeftToRight }
         leftPadding: ui.du(2)
         rightPadding: ui.du(2)
-        topPadding: ui.du(1.6)
-        bottomPadding: ui.du(1.6)
+        topPadding: ui.du(1.1)
+        bottomPadding: ui.du(1.1)
         Avatar { title: item.row.title; chatId: item.row.chatId; rightMargin: ui.du(1.8) }
         Container {
             layoutProperties: StackLayoutProperties { spaceQuota: 1 }
@@ -24,7 +24,7 @@ CustomListItem {
                     text: item.row.title
                     textFormat: TextFormat.Plain
                     textStyle.color: Color.create(Ui.ink)
-                    textStyle.fontWeight: FontWeight.W500
+                    textStyle.fontWeight: (item.row.unreadLabel || "").length > 0 ? FontWeight.W600 : FontWeight.W400
                     layoutProperties: StackLayoutProperties { spaceQuota: 1 }
                 }
                 Label {
@@ -40,6 +40,7 @@ CustomListItem {
                 horizontalAlignment: HorizontalAlignment.Fill
                 Label {
                     text: item.row.preview || qsTr("Нет сообщений")
+                    multiline: false
                     textFormat: TextFormat.Plain
                     textStyle.color: Color.create(Ui.secondary)
                     textStyle.base: SystemDefaults.TextStyles.SmallText
