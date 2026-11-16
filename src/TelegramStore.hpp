@@ -7,6 +7,8 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QVariantList>
+#include <QStringList>
+#include <QList>
 #include "LocalOutbox.hpp"
 
 class TelegramSession;
@@ -26,6 +28,23 @@ public:
     int communityCount() const;
     QString targetMessageId() const { return m_targetMessage; }
     int targetMessageIndex() const;
+    QVariantList contacts() const { return m_contactRows; }
+    void loadContacts();
+    void setContactQuery(const QString &text);
+    void setContactSection(int section);
+    bool contactsLoading() const { return m_contactsLoading; }
+    bool openingContact() const { return m_openingContact; }
+    QString contactsError() const { return m_contactsError; }
+    bool openContact(const QString &userId);
+    void cancelContactOpen();
+    QString currentChatStatus() const;
+    bool currentStatusActive() const;
+    bool composerVisible() const {const QVariantMap current=m_chats.value(m_current);return !m_current.isEmpty() && (!current.value("isChannel").toBool() || current.value("canSend").toBool());}
+    QString currentAvatarKey() const { return m_current.isEmpty()?QString():"chat:"+m_current; }
+    QString avatarPath(const QString &key) const;
+    QString avatarCacheDirectory() const;
+    bool avatarAffected(const QString &key,const QString &changedKey) const;
+    void requestAvatar(const QString &key);
     bool archiveView() const { return m_archiveView; }
     void setArchiveView(bool value);
     bool setPinned(const QString &chatId, bool value);
@@ -99,6 +118,9 @@ signals:
     void forwardReady();
     void infoChanged();
     void recipientChatsChanged();
+    void contactsChanged();
+    void contactChatReady(const QString &chatId);
+    void avatarChanged(const QString &key);
 
 public slots:
     void consume(const QVariantMap &object);
@@ -107,6 +129,7 @@ public slots:
 private slots:
     void sessionChanged();
     void expireRequests();
+    void peopleTick();
 
 private:
     QString submit(QVariantMap object, const QString &kind, const QString &chatId = QString());
@@ -129,6 +152,15 @@ private:
     void applyMessageAction(const QString &messageId, const QString &action);
     void updateInfoRows();
     bool actionResponse(const QVariantMap &object, const QVariantMap &pending);
+    bool peopleResponse(const QVariantMap &object,const QVariantMap &pending);
+    bool peopleUpdate(const QVariantMap &object);
+    void upsertUser(const QVariantMap &user);
+    void rebuildContacts();
+    void rememberAvatar(const QString &key,const QVariantMap &photo);
+    void updateAvatarFile(const QVariantMap &file);
+    QVariantMap avatarFile(const QString &key) const;
+    void pumpAvatars();
+    QString chatActivity(const QString &chatId) const;
 
     void suspendLocalSends();
     void restoreChatDraft(const QString &id, const QVariant &remote);
@@ -140,6 +172,7 @@ private:
     qlonglong m_nextCleanup;
     QTimer m_expiry;
     QTimer m_draftTimer;
+    QTimer m_peopleTimer;
     QElapsedTimer m_clock;
     int m_requestTimeoutMs;
     QMap<QString, QVariantMap> m_chats, m_users, m_requests, m_outbox;
@@ -152,6 +185,17 @@ private:
     QSet<QString> m_recoveredTexts;
     QSet<qlonglong> m_historyTouched, m_removed;
     QVariantList m_chatRows, m_messageRows;
+    QVariantList m_contactRows;
+    QStringList m_contactIds;
+    QString m_contactQuery,m_contactsError,m_pendingContactChat;
+    bool m_contactsLoading,m_openingContact;
+    int m_contactSection;
+    unsigned m_contactSerial;
+    QMap<QString,QVariantMap> m_avatarFiles,m_chatActions;
+    QList<int> m_avatarQueue;
+    QSet<int> m_avatarQueued;
+    QMap<int,qlonglong> m_avatarActive,m_avatarFailed;
+    qlonglong m_nextPresenceRefresh;
     QVariantMap m_composerContext, m_forward, m_info;
     QVariantList m_infoRows, m_members, m_shared;
     QString m_infoError, m_infoCursor;

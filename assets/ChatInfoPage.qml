@@ -27,7 +27,7 @@ Page {
             layoutProperties: StackLayoutProperties {spaceQuota: 1}
             Container {
                 leftPadding: ui.du(2);rightPadding: ui.du(2);topPadding: ui.du(2);bottomPadding: ui.du(2)
-                Avatar {title: infoPage.detail.title || "";chatId: infoPage.detail.chatId || "";horizontalAlignment: HorizontalAlignment.Center}
+                Avatar {imageProvider: _avatars;title: infoPage.detail.title || "";chatId: infoPage.detail.chatId || "";avatarKey: infoPage.detail.avatarKey || "";horizontalAlignment: HorizontalAlignment.Center}
                 Label {text: infoPage.detail.title || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.TitleText;horizontalAlignment: HorizontalAlignment.Center}
                 Label {visible: infoPage.detail.group===true;text: (infoPage.detail.channel?qsTr("Подписчиков: "):qsTr("Участников: "))+(infoPage.detail.memberCount || "…");textStyle.color: Color.create(Ui.secondary)}
                 Label {text: infoPage.detail.description || qsTr("Нет описания");textFormat: TextFormat.Plain;multiline: true}
@@ -37,6 +37,7 @@ Page {
             }
         }
         ListView {
+            property variant avatarProvider: _avatars
             id: infoList
             objectName: "infoList"
             visible: infoPage.section>0

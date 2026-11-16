@@ -17,3 +17,4 @@ HEADERS += ../src/TelegramSearch.hpp
 SOURCES += ../src/AutoPager.cpp
 HEADERS += ../src/AutoPager.hpp
 SOURCES += ../src/TelegramStoreActions.cpp
+SOURCES += ../src/TelegramPeople.cpp

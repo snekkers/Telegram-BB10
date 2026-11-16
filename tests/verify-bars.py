@@ -26,7 +26,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.10.0.12" in manifest
+            assert "Package-Version: 0.11.0.13" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
             entry = next(line for line in manifest.splitlines() if line.startswith("Entry-Point: "))
@@ -75,6 +75,8 @@ def main():
     assert store_tests.get("failures") == "0" and store_tests.get("errors") == "0"
     store_incidents = ElementTree.parse(ROOT / "build/session-tests/store/results.qt.xml").getroot().findall(".//Incident")
     assert store_incidents and all(item.get("type") == "pass" for item in store_incidents)
+    avatar_incidents=ElementTree.parse(ROOT / "build/session-tests/avatars/results.qt.xml").getroot().findall(".//Incident")
+    assert avatar_incidents and all(item.get("type")=="pass" for item in avatar_incidents)
     report = {
         "checked_date": time.strftime("%Y-%m-%d"), "host": "Apple M1 / macOS arm64",
         "scope": "Build/package and Linux Qt checks; device execution is recorded separately in build/porting/device-tests.json",
@@ -86,6 +88,7 @@ def main():
                           "functions_including_setup_cleanup": int(tests.get("tests")),
                           "passed_rows_including_setup_cleanup": len(incidents), "failures": 0,
                           "real_tdlib": "1.8.69 offline: version, auth state, close; no parameters or account"},
+        "avatar_tests": {"passed_rows_including_setup_cleanup": len(avatar_incidents), "failures": 0, "scope": "headless Qt image crop, cache, alpha and invalid/symlink input"},
         "chat_tests": {"platform": "Linux ARM64 / Qt 5.15.8 in Docker; synthetic process",
                        "results": "build/session-tests/store/results.xml",
                        "passed_rows_including_setup_cleanup": len(store_incidents), "failures": 0,

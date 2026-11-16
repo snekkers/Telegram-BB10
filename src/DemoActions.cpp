@@ -10,7 +10,7 @@ int ChatController::communityCount() const{
     int count=0;foreach(const QVariant &value,m_chatRows)if(!value.toMap().value("personal").toBool() && value.toMap().value("archived").toBool()==m_archiveView)++count;return count;
 }
 bool ChatController::beginMessageAction(const QString &id,const QString &action){
-    if(m_context.value("mode")=="edit")return false;
+    if(m_context.value("mode")=="edit" || (!composerVisible() && action!="forward"))return false;
     foreach(const QVariant &value,m_history.value(m_currentChatId)){
         const QVariantMap row=value.toMap();if(row.value("messageId")!=id)continue;
         if(action=="edit" && !row.value("outgoing").toBool())return false;
@@ -36,6 +36,7 @@ bool ChatController::forwardTo(const QString &id){
 QVariantMap ChatController::chatInfo() const{
     QVariantMap result;
     foreach(const QVariant &value,m_chatRows)if(value.toMap().value("chatId")==m_currentChatId)result=value.toMap();
+    result.insert("avatarKey",currentAvatarKey());
     result.insert("group",!result.value("personal").toBool());result.insert("channel",m_currentChatId=="demo-design");
     result.insert("memberCount",result.value("personal").toBool()?2:48);
     result.insert("description",QString::fromUtf8("Демонстрационный чат Berrygram. Все действия выполняются локально."));
@@ -45,7 +46,7 @@ void ChatController::setInfoSection(int section){
     m_infoSection=section;m_infoRows->clear();
     if(section==1 && chatInfo().value("group").toBool()){
         const QStringList names=QStringList()<<QString::fromUtf8("Анна")<<QString::fromUtf8("Вы");
-        for(int i=0;i<names.size();++i){QVariantMap row;row.insert("chatId",QString("demo-member-%1").arg(i));row.insert("title",names.at(i));row.insert("preview",i==0?QString::fromUtf8("Администратор"):QString::fromUtf8("Участник"));m_infoRows->append(QVariant(row));}
+        for(int i=0;i<names.size();++i){QVariantMap row;row.insert("chatId",QString("demo-member-%1").arg(i));row.insert("title",names.at(i));row.insert("avatarKey",i==0?"demo:anna":"");row.insert("preview",i==0?QString::fromUtf8("Администратор"):QString::fromUtf8("Участник"));m_infoRows->append(QVariant(row));}
     }
     emit currentChatChanged();
 }

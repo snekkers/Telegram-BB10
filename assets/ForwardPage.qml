@@ -19,6 +19,7 @@ Page {
             TextField {objectName: "recipientSearch";hintText: qsTr("Поиск получателя");enabled: forwardPage.selection.state==="ready";onTextChanged: forwardPage.source.setRecipientQuery(text)}
         }
         ListView {
+            property variant avatarProvider: _avatars
             objectName: "recipientList"
             enabled: forwardPage.selection.state==="ready"
             dataModel: forwardPage.source.recipients

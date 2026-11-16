@@ -2,6 +2,7 @@
 #include "TelegramStore.hpp"
 #include "TelegramSearch.hpp"
 #include "AutoPager.hpp"
+#include "Presence.hpp"
 #include "LocalOutbox.hpp"
 #include "PrivateFile.hpp"
 #include "MessagePresentation.hpp"
@@ -87,6 +88,63 @@ private:
     }
 
 private slots:
+    void readOnlyChannelsHideComposerAndPublishersKeepIt() {
+        Peer peer;ready(peer);
+        QVariantMap source=object("chat");source.insert("id",C.toLongLong());source.insert("title","Channel");
+        QVariantMap type=object("chatTypeSupergroup");type.insert("is_channel",true);type.insert("supergroup_id",1234);source.insert("type",type);
+        QVariantMap permissions=object("chatPermissions");permissions.insert("can_send_basic_messages",false);source.insert("permissions",permissions);
+        QVariantMap updateChat=object("updateNewChat");updateChat.insert("chat",source);peer.store.consume(updateChat);
+        QVERIFY(peer.store.openChat(C));QVERIFY(!peer.store.composerVisible());
+        permissions.insert("can_send_basic_messages",true);QVariantMap changed=object("updateChatPermissions");changed.insert("permissions",permissions);update(peer,changed,C);
+        QVERIFY(peer.store.composerVisible());
+    }
+    void contactsUseTelegramUsersSearchAndOpenWithoutSending() {
+        Peer peer;ready(peer);peer.store.loadContacts();QTRY_VERIFY(!peer.store.contactsLoading());QTRY_COMPARE(peer.store.contacts().size(),3);
+        peer.store.setContactQuery("@ANNA");QCOMPARE(peer.store.contacts().size(),1);QCOMPARE(peer.store.contacts().first().toMap().value("userId").toString(),QString("42"));
+        QSignalSpy readyChat(&peer.store,SIGNAL(contactChatReady(QString)));
+        QVERIFY(peer.store.openContact("42"));QVERIFY(!peer.store.openContact("42"));QTRY_COMPARE(readyChat.size(),1);
+        const QString id=readyChat.first().first().toString();QCOMPARE(id,QString("420042"));QVERIFY(!peer.store.chat(id).isEmpty());
+        QCOMPARE(peer.store.chat(id).value("peerId").toString(),QString("42"));
+        QVERIFY(peer.store.openChat(id));QTRY_VERIFY(!peer.store.loadingHistory());QCOMPARE(peer.store.currentChatStatus(),QString::fromUtf8("онлайн"));
+        QCOMPARE(control(peer,"stats").value("send_count").toInt(),0);
+        peer.store.setContactQuery(QString());peer.store.setContactSection(1);QCOMPARE(peer.store.contacts().size(),1); // Only known main-list private chats.
+    }
+    void cancelledContactRequestCannotOpenAChatLater() {
+        Peer peer;ready(peer);peer.store.loadContacts();QTRY_VERIFY(!peer.store.contactsLoading());
+        QVERIFY(!control(peer,"holdContact").isEmpty());QSignalSpy chats(&peer.store,SIGNAL(contactChatReady(QString)));
+        QVERIFY(peer.store.openContact("42"));peer.store.cancelContactOpen();QVERIFY(!control(peer,"releaseContact").isEmpty());QTest::qWait(50);QCOMPARE(chats.size(),0);QVERIFY(!peer.store.openingContact());
+    }
+    void presenceRespectsPrivacyAndOnlineExpiry() {
+        QVariantMap user;QVariantMap status=object("userStatusOnline");status.insert("expires",1001);user.insert("status",status);
+        QCOMPARE(Presence::text(user,1000),QString::fromUtf8("онлайн"));QVERIFY(Presence::active(status,1000));QVERIFY(!Presence::active(status,1001));
+        QCOMPARE(Presence::text(user,1001),QString::fromUtf8("недавно в сети"));
+        user.insert("status",object("userStatusEmpty"));QCOMPARE(Presence::text(user),QString::fromUtf8("статус недоступен"));
+        user.insert("status",object("userStatusLastMonth"));QVERIFY(Presence::text(user).contains(QString::fromUtf8("месяце")));
+        user.insert("bot",true);QCOMPARE(Presence::text(user),QString::fromUtf8("бот"));
+    }
+    void typingUsesSenderUpdatesCancelAndExpires() {
+        Peer peer;ready(peer);open(peer);QVariantMap typing=object("updateChatAction"),sender=object("messageSenderUser");sender.insert("user_id",42);
+        typing.insert("sender_id",sender);typing.insert("action",object("chatActionTyping"));update(peer,typing);
+        QVERIFY(peer.store.currentChatStatus().contains(QString::fromUtf8("печатает")));QVERIFY(peer.store.currentStatusActive());
+        QVERIFY(peer.store.chats().first().toMap().value("typingText").toString().contains(QString::fromUtf8("печатает")));
+        typing.insert("action",object("chatActionCancel"));update(peer,typing);QCOMPARE(peer.store.currentChatStatus(),QString::fromUtf8("группа"));
+        typing.insert("action",object("chatActionTyping"));update(peer,typing);QTest::qWait(6200);QTRY_COMPARE(peer.store.currentChatStatus(),QString::fromUtf8("группа"));
+    }
+    void avatarsAreLazyBoundedCachedAndInvalidatedWhenRemoved() {
+        Peer peer;ready(peer);peer.store.loadContacts();QTRY_VERIFY(!peer.store.contactsLoading());
+        QCOMPARE(control(peer,"stats").value("people_calls").toList().size(),2); // Contacts + the missing user, no eager image downloads.
+        peer.store.requestAvatar("user:42");peer.store.requestAvatar("user:42");
+        QTRY_VERIFY(!peer.store.avatarPath("user:42").isEmpty());QVERIFY(peer.store.avatarPath("user:42").startsWith(peer.session.dataDirectory()+"/files/"));
+        const QString cachedPath=peer.store.avatarPath("user:42");
+        QVariantMap stale=object("updateFile"),staleFile=object("file");staleFile.insert("id",77);QVariantMap local;local.insert("is_downloading_completed",false);staleFile.insert("local",local);stale.insert("file",staleFile);peer.store.consume(stale);
+        QCOMPARE(peer.store.avatarPath("user:42"),cachedPath);
+        const int calls=control(peer,"stats").value("people_calls").toList().size();
+        peer.store.requestAvatar("user:42");QTest::qWait(80);QCOMPARE(control(peer,"stats").value("people_calls").toList().size(),calls);
+        QVariantMap user=object("user");user.insert("id",42);user.insert("first_name","Anna");user.insert("is_contact",true);user.insert("profile_photo",QVariant());QVariantMap event=object("updateUser");event.insert("user",user);update(peer,event);
+        QVERIFY(peer.store.avatarPath("user:42").isEmpty());
+        QVariantMap file=object("file");file.insert("id",90);file.insert("size",2*1024*1024);QVariantMap photo;photo.insert("small",file);user.insert("profile_photo",photo);event.insert("user",user);update(peer,event);
+        peer.store.requestAvatar("user:42");QTest::qWait(50);QCOMPARE(control(peer,"stats").value("people_calls").toList().size(),calls);
+    }
     void autoPagerWaitsForLayoutAndDoesNotSpinOrLoadHiddenPages() {
         AutoPager pager(0,40);QSignalSpy requests(&pager,SIGNAL(requestMore()));
         pager.setEnabled(true);pager.setAtEdge(true);pager.setContentCount(1);

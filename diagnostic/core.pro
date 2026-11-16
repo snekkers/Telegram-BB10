@@ -11,3 +11,4 @@ SOURCES += ../src/LocalOutbox.cpp
 HEADERS += ../src/LocalOutbox.hpp
 
 SOURCES += ../src/TelegramStoreActions.cpp
+SOURCES += ../src/TelegramPeople.cpp

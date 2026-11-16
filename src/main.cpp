@@ -5,6 +5,7 @@
 #include "UiTools.hpp"
 #include "SearchController.hpp"
 #include "AutoPager.hpp"
+#include "AvatarImages.hpp"
 
 #include <bb/cascades/AbstractPane>
 #include <bb/cascades/Application>
@@ -23,13 +24,15 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     app.themeSupport()->setVisualStyleAndPrimaryColor(bb::cascades::VisualStyle::Bright,
         bb::cascades::Color::fromARGB(0xff5288b7), bb::cascades::Color::fromARGB(0xff42739d));
     qmlRegisterType<AutoPager>("Berrygram", 1, 0, "AutoPager");
+    qmlRegisterType<AvatarImage>("Berrygram",1,0,"AvatarImage");
     ChatController controller;
     TelegramSession telegram;
     TelegramStore store(&telegram);
+    AvatarProvider avatars(&store);
     TelegramController telegramController(&store);
     TelegramSearch telegramSearch(&telegram,&store);
     SearchController searchController(&telegramSearch,&controller);
-    UiTools uiTools(&controller,&telegramController,&searchController);
+    UiTools uiTools(&controller,&telegramController,&searchController,&telegram,&avatars);
     QObject::connect(QCoreApplication::instance(), SIGNAL(aboutToQuit()), &store, SLOT(flushDrafts()));
 
     bb::cascades::QmlDocument *document =
@@ -38,6 +41,7 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     document->setContextProperty("_telegram", &telegram);
     document->setContextProperty("_live", &telegramController);
     document->setContextProperty("_ui", &uiTools);
+    document->setContextProperty("_avatars",&avatars);
     document->setContextProperty("_search", &searchController);
 
     if (document->hasErrors()) {

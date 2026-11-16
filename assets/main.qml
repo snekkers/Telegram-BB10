@@ -30,6 +30,11 @@ NavigationPane {
         var page = searchPageDefinition.createObject();
         if (page) { page.demoSearch = !live; page.openResult.connect(function(chatId, messageId) { navigation.openChatById(chatId, messageId); }); navigation.push(page); }
     }
+    function openContacts() {
+        if(!live && !demo)return;
+        var source=live?_live:_chat;source.setContactQuery("");source.setContactSection(0);source.loadContacts();
+        var page=contactsPageDefinition.createObject();if(page){page.livePage=live;navigation.push(page);}
+    }
     function openLogin() {
         var page = loginPageDefinition.createObject();
         if (page) {
@@ -53,15 +58,19 @@ NavigationPane {
             caption: navigation.live || navigation.demo ? (navigation.archiveView?qsTr("Архив"):qsTr("Чаты")) : "Berrygram"
             detail: navigation.live ? _live.connectionStatus : navigation.demo ? qsTr("Демо · без подключения") : qsTr("Telegram для BlackBerry Classic")
             compact: navigation.live || navigation.demo
+            composeVisible: navigation.live || navigation.demo
+            onComposeRequested: navigation.openContacts()
             menuVisible: navigation.live || navigation.demo
             onMenuRequested: _ui.openMenu(chatsPage)
         }
         shortcuts: [
             SystemShortcut { type: SystemShortcuts.Search; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
             Shortcut { key: "s"; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
+            Shortcut { key: "n";enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage;onTriggered: navigation.openContacts() },
             Shortcut { key: "u"; enabled: navigation.live; onTriggered: navigation.openChatById(_live.nextUnreadChat()) }
         ]
         actions: [
+            ActionItem {objectName: "newMessageAction";title: qsTr("Новое сообщение");imageSource: "asset:///icons/edit-white.png";enabled: navigation.live || navigation.demo;onTriggered: navigation.openContacts()},
             ActionItem { objectName: "globalSearchAction"; title: qsTr("Поиск"); imageSource: "asset:///icons/search-white.png"; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
             ActionItem { objectName: "archiveAction"; title: navigation.archiveView?qsTr("К чатам"):qsTr("Архив"); imageSource: "asset:///icons/archive-white.png"; enabled: navigation.live || navigation.demo; onTriggered: navigation.setArchive(!navigation.archiveView) },
             ActionItem { title: navigation.live ? qsTr("Подключение") : qsTr("Войти в Telegram"); imageSource: "asset:///icons/settings-white.png"; onTriggered: navigation.openLogin() },
@@ -75,7 +84,7 @@ NavigationPane {
                 visible: !navigation.live && !navigation.demo
                 leftPadding: ui.du(4); rightPadding: ui.du(4)
                 topPadding: ui.du(6); bottomPadding: ui.du(3)
-                Avatar { title: "Berrygram"; chatId: "berrygram"; horizontalAlignment: HorizontalAlignment.Center; bottomMargin: ui.du(2) }
+                Avatar {imageProvider: _avatars; title: "Berrygram"; chatId: "berrygram"; horizontalAlignment: HorizontalAlignment.Center; bottomMargin: ui.du(2) }
                 Label { text: "Berrygram"; textStyle.base: SystemDefaults.TextStyles.BigText; textStyle.color: Color.create(Ui.ink); horizontalAlignment: HorizontalAlignment.Center }
                 Label {
                     text: qsTr("Ваши чаты. Знакомый Telegram.\nНа клавиатуре BlackBerry.")
@@ -102,6 +111,7 @@ NavigationPane {
                 }
                 Label { visible: navigation.live && _live.errorText.length > 0; text: _live.errorText; textFormat: TextFormat.Plain; multiline: true; leftMargin: ui.du(2); rightMargin: ui.du(2); textStyle.color: Color.create("#a74132") }
                 ListView {
+            property variant avatarProvider: _avatars
                     id: chatList
                     objectName: "chatList"
                     dataModel: navigation.live ? _live.chats : _chat.chats
@@ -141,13 +151,14 @@ NavigationPane {
             }
         }
     }
-    attachedObjects: [ ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" }, ComponentDefinition { id: infoPageDefinition; source: "ChatInfoPage.qml" }, ComponentDefinition { id: forwardPageDefinition; source: "ForwardPage.qml" } ]
+    attachedObjects: [ ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" }, ComponentDefinition { id: infoPageDefinition; source: "ChatInfoPage.qml" }, ComponentDefinition { id: forwardPageDefinition; source: "ForwardPage.qml" }, ComponentDefinition {id: contactsPageDefinition;source: "ContactsPage.qml"} ]
     onPushTransitionEnded: {
-        if ((page.objectName === "chatPage" || page.objectName === "searchPage") && page.focusComposer !== undefined) page.focusComposer();
+        if ((page.objectName === "chatPage" || page.objectName === "searchPage" || page.objectName === "contactsPage") && page.focusComposer !== undefined) page.focusComposer();
     }
     onPopTransitionEnded: {
         if (page.objectName === "chatPage") { if (page.liveChat) _live.closeChat(); else _chat.closeChat(); }
         if (page.objectName === "searchPage") _search.cancel();
+        if (page.objectName === "contactsPage") (page.livePage?_live:_chat).cancelContactOpen();
         if (page.objectName === "forwardPage") (page.liveChat?_live:_chat).setRecipientQuery("");
         page.destroy();
     }

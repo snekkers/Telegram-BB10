@@ -4,6 +4,7 @@ import json
 import sys
 import base64
 import shutil
+import time
 from pathlib import Path
 
 assert Path(sys.argv[sys.argv.index("--library") + 1]).is_file()
@@ -13,6 +14,9 @@ PUBLIC = -1001234567899
 archive_loaded = False
 actions = []
 forward_race = False
+people_calls=[]
+held_contact_open=[]
+hold_contact=False
 loaded = False
 held_search = []
 search_calls = []
@@ -92,6 +96,19 @@ for line in sys.stdin:
     kind = query["@type"]
     if kind == "getOption":
         reply(query, "optionValueString", value="1.8.69")
+    elif kind == "getContacts":
+        people_calls.append(query)
+        for uid,name,username,status in [(42,"Анна","anna",{"@type":"userStatusOnline","expires":int(time.time())+3600}),(84,"Борис","boris",{"@type":"userStatusRecently"})]:
+            send({"@type":"updateUser","user":{"@type":"user","id":uid,"first_name":name,"last_name":"","is_contact":True,"usernames":{"editable_username":username},"status":status,"profile_photo":{"small":{"@type":"file","id":77 if uid==42 else 78,"size":68,"local":{"is_downloading_completed":False}}}}})
+        reply(query,"users",total_count=3,user_ids=[42,84,85])
+    elif kind == "getUser":
+        people_calls.append(query);assert query["user_id"]==85
+        reply(query,"user",id=85,first_name="Катя",last_name="",is_contact=True,status={"@type":"userStatusEmpty"},type={"@type":"userTypeRegular"})
+    elif kind == "createPrivateChat":
+        people_calls.append(query);assert query["user_id"] in (42,84,85) and query["force"] is False
+        value=chat(420000+query["user_id"],"Новый диалог",0);value["type"]={"@type":"chatTypePrivate","user_id":query["user_id"]}
+        if hold_contact:hold_contact=False;held_contact_open.append((query,value))
+        else:reply(query,kind="chat",**{k:v for k,v in value.items() if k!="@type"})
     elif kind == "getMe":
         reply(query, "user", id=USER, first_name="Fixture", last_name="")
     elif kind in ("searchPublicChats", "searchChats", "searchChatsOnServer", "searchMessages"):
@@ -151,7 +168,7 @@ for line in sys.stdin:
                 send({"@type": "updateNewChat", "chat": row})
             reply(query)
     elif kind in ("openChat", "closeChat"):
-        assert query["chat_id"] in (A, B, C, PUBLIC) and isinstance(query["chat_id"], int)
+        assert query["chat_id"] in (A, B, C, PUBLIC,420042,420084,420085) and isinstance(query["chat_id"], int)
         reply(query)
     elif kind == "setChatDraftMessage":
         assert query["chat_id"] in (A, B, C)
@@ -169,6 +186,14 @@ for line in sys.stdin:
               "last_read_inbox_message_id": query["message_ids"][-1], "unread_count": 0})
         reply(query)
     elif kind == "downloadFile":
+        if query["file_id"] in (77,78):
+            people_calls.append(query);assert query["limit"]==1024*1024 and query["priority"]==8 and query["offset"]==0 and query["synchronous"] is False
+            directory=library_path.parent/"private/files";directory.mkdir(parents=True,exist_ok=True)
+            path=directory/("avatar-"+str(query["file_id"])+".png")
+            path.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII="))
+            value={"id":query["file_id"],"size":68,"local":{"path":str(path),"is_downloading_completed":True,"is_downloading_active":False}}
+            send({"@type":"updateFile","file":{"@type":"file",**value}});reply(query,"file",**value)
+            continue
         assert query["file_id"] == 7 and query["limit"] == 50 * 1024 * 1024 and query["synchronous"] is False
         directory = library_path.parent / "private/files"
         directory.mkdir(parents=True, exist_ok=True)
@@ -325,7 +350,12 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "forwardRace":
+        if op == "holdContact":
+            hold_contact=True
+        elif op == "releaseContact":
+            for request,value in held_contact_open:reply(request,kind="chat",**{k:v for k,v in value.items() if k!="@type"})
+            held_contact_open.clear()
+        elif op == "forwardRace":
             forward_race = True
         elif op == "releaseSearch":
             for request in held_search:
@@ -364,7 +394,7 @@ for line in sys.stdin:
             held_sends.clear()
         else:
             assert op == "stats", op
-        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local, search_calls=search_calls, actions=actions)
+        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local, search_calls=search_calls, actions=actions, people_calls=people_calls)
     else:
         raise AssertionError(kind)
 

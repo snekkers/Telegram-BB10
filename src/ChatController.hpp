@@ -5,6 +5,7 @@
 #include <QMap>
 #include <QString>
 #include <QVariant>
+#include <QTimer>
 #include <bb/cascades/DataModel>
 #include <bb/cascades/GroupDataModel>
 #include <bb/cascades/ArrayDataModel>
@@ -36,6 +37,16 @@ class ChatController : public QObject
     Q_PROPERTY(int forwardSerial READ forwardSerial NOTIFY currentChatChanged)
     Q_PROPERTY(int recipientCount READ recipientCount NOTIFY currentChatChanged)
     Q_PROPERTY(bool canLoadRecipientChats READ canLoadRecipientChats NOTIFY currentChatChanged)
+
+    Q_PROPERTY(bb::cascades::DataModel* contacts READ contacts CONSTANT)
+    Q_PROPERTY(int contactCount READ contactCount NOTIFY currentChatChanged)
+    Q_PROPERTY(bool contactsLoading READ contactsLoading NOTIFY currentChatChanged)
+    Q_PROPERTY(bool openingContact READ openingContact NOTIFY currentChatChanged)
+    Q_PROPERTY(QString contactsError READ contactsError NOTIFY currentChatChanged)
+    Q_PROPERTY(QString currentChatStatus READ currentChatStatus NOTIFY currentChatChanged)
+    Q_PROPERTY(bool currentStatusActive READ currentStatusActive NOTIFY currentChatChanged)
+    Q_PROPERTY(QString currentAvatarKey READ currentAvatarKey NOTIFY currentChatChanged)
+    Q_PROPERTY(bool composerVisible READ composerVisible NOTIFY currentChatChanged)
 
 public:
     explicit ChatController(QObject *parent = 0);
@@ -72,6 +83,21 @@ public:
     Q_INVOKABLE void setRecipientQuery(const QString &query) { const QString next=query.trimmed().left(128);if(next==m_recipientQuery)return;m_recipientQuery=next;refreshChats(); }
     Q_INVOKABLE void refreshRecipients() { refreshChats(); }
     bool injectIncomingDemo();
+    bb::cascades::DataModel *contacts() const {return m_contacts;}
+    int contactCount() const {return m_contacts->size();}
+    bool contactsLoading() const {return false;}
+    bool openingContact() const {return false;}
+    QString contactsError() const {return QString();}
+    QString currentChatStatus() const;
+    bool currentStatusActive() const;
+    QString currentAvatarKey() const;
+    bool composerVisible() const {return m_currentChatId!="demo-design";}
+    Q_INVOKABLE void loadContacts();
+    Q_INVOKABLE void setContactQuery(const QString &text){const QString next=text.trimmed().left(128);if(next==m_contactQuery)return;m_contactQuery=next;refreshContacts();}
+    Q_INVOKABLE void setContactSection(int section){m_contactSection=section;refreshContacts();}
+    Q_INVOKABLE bool openContact(const QString &id,QObject *target);
+    Q_INVOKABLE void cancelContactOpen(){}
+    void demoPresence(const QString &status);
     Q_INVOKABLE bool openChat(const QString &chatId);
     Q_INVOKABLE bool openChatAt(const QString &chatId, const QString &messageId);
     Q_INVOKABLE void setChatCategory(const QString &category);
@@ -87,7 +113,10 @@ public:
 signals:
     void currentChatChanged();
 
+private slots:
+    void clearDemoTyping();
 private:
+    void refreshContacts();
     void addDemoChat(const QString &id, const QString &title,
                      const QString &text, int order);
     void refreshChats();
@@ -98,6 +127,10 @@ private:
     bb::cascades::GroupDataModel *m_recipients;
     QVariantMap m_context,m_forward;
     QMap<QString,bool> m_muted;
+    bb::cascades::ArrayDataModel *m_contacts;
+    QTimer m_typingTimer;
+    QString m_contactQuery,m_demoStatus;
+    int m_contactSection;
     bool m_archiveView;
     int m_infoSection,m_incomingSerial,m_forwardSerial;
     QVariantList m_chatRows;

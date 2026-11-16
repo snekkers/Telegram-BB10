@@ -12,8 +12,10 @@
 
 TelegramController::TelegramController(TelegramStore *store, QObject *parent)
     : QObject(parent), m_store(store), m_chats(new bb::cascades::ArrayDataModel(this)),
-      m_messages(new bb::cascades::ArrayDataModel(this)), m_infoRows(new bb::cascades::ArrayDataModel(this)), m_recipients(new bb::cascades::ArrayDataModel(this)), m_scrollSerial(0), m_incomingSerial(0), m_forwardSerial(0), m_recording(false)
+      m_messages(new bb::cascades::ArrayDataModel(this)), m_infoRows(new bb::cascades::ArrayDataModel(this)), m_recipients(new bb::cascades::ArrayDataModel(this)), m_scrollSerial(0), m_incomingSerial(0), m_forwardSerial(0), m_contacts(new bb::cascades::ArrayDataModel(this)),m_recording(false)
 {
+    connect(store,SIGNAL(contactsChanged()),this,SLOT(updateContacts()));
+    connect(store,SIGNAL(contactChatReady(QString)),this,SLOT(contactReady(QString)));
     connect(store,SIGNAL(infoChanged()),this,SLOT(updateInfoRows()));
     connect(store,SIGNAL(incomingMessage()),this,SLOT(incoming()));
     connect(store,SIGNAL(forwardReady()),this,SLOT(forwardReady()));
@@ -231,4 +233,15 @@ void TelegramController::refreshRecipients(){
 bool TelegramController::beginMessageAction(const QString &id,const QString &action){
     if(m_recording || !m_attachment.isEmpty()) {m_mediaError=QString::fromUtf8("Сначала уберите подготовленное вложение или закончите запись.");emit changed();return false;}
     return m_store->beginMessageAction(id,action);
+}
+
+void TelegramController::updateContacts(){reconcile(m_contacts,m_store->contacts(),"key");emit changed();}
+bool TelegramController::openContact(const QString &id,QObject *target){
+    if(!target || target->objectName()!="contactsPage")return false;
+    m_contactTarget=target;return m_store->openContact(id);
+}
+void TelegramController::cancelContactOpen(){m_contactTarget=0;m_store->cancelContactOpen();}
+void TelegramController::contactReady(const QString &id){
+    if(m_contactTarget)QMetaObject::invokeMethod(m_contactTarget.data(),"openContactChat",Qt::QueuedConnection,Q_ARG(QVariant,QVariant(id)));
+    m_contactTarget=0;
 }

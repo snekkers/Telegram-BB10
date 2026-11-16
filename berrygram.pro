@@ -45,3 +45,11 @@ SOURCES += $$PWD/src/AutoPager.cpp
 HEADERS += $$PWD/src/AutoPager.hpp
 SOURCES += $$PWD/src/TelegramStoreActions.cpp
 SOURCES += $$PWD/src/DemoActions.cpp
+SOURCES += $$PWD/src/TelegramPeople.cpp
+HEADERS += $$PWD/src/Presence.hpp
+SOURCES += $$PWD/src/AvatarImages.cpp
+HEADERS += $$PWD/src/AvatarImages.hpp
+
+SOURCES += $$PWD/src/AvatarRenderer.cpp
+HEADERS += $$PWD/src/AvatarRenderer.hpp
+SOURCES += $$PWD/src/DemoPeople.cpp

@@ -4,6 +4,8 @@
 #include "SearchController.hpp"
 #include "PrivateFile.hpp"
 #include "AutoPager.hpp"
+#include "TelegramSession.hpp"
+#include "AvatarImages.hpp"
 #include <bb/cascades/ActionItem>
 #include <bb/cascades/ListScrollStateHandler>
 #include <bb/cascades/AbstractPane>
@@ -33,8 +35,8 @@
 
 using namespace bb::cascades;
 
-UiTools::UiTools(ChatController *demo, TelegramController *live, SearchController *search, QObject *parent)
-    : QObject(parent), m_demo(demo), m_live(live), m_search(search),
+UiTools::UiTools(ChatController *demo, TelegramController *live, SearchController *search,TelegramSession *session,AvatarProvider *avatars,QObject *parent)
+    : QObject(parent), m_demo(demo), m_live(live), m_search(search),m_session(session),m_avatars(avatars),m_resumeSaved(false),
       m_directory(QDir::currentPath()+"/data/ui-check"), m_checks(false), m_pending(false),m_lastSubmitMs(-1000)
 {
     m_submitClock.start();
@@ -42,8 +44,16 @@ UiTools::UiTools(ChatController *demo, TelegramController *live, SearchControlle
     m_checks = QFile::exists(m_directory+"/enabled");
     if (m_checks) {
         connect(&m_timer,SIGNAL(timeout()),this,SLOT(checkRequest()));
+        connect(session,SIGNAL(changed()),this,SLOT(resumeSaved()));
         m_timer.start(750);
     }
+#endif
+}
+void UiTools::resumeSaved(){
+#ifdef BERRYGRAM_UI_CHECKS
+    if(!m_resumeSaved)return;
+    if(m_session->phase()=="parameters"){m_resumeSaved=false;m_session->useSavedConfiguration();}
+    else if(m_session->phase()=="failed" || m_session->phase()=="ready")m_resumeSaved=false;
 #endif
 }
 void UiTools::setRoot(AbstractPane *root) { m_root=root; }
@@ -74,13 +84,27 @@ void UiTools::checkRequest()
     m_result.clear();m_result.insert("id",m_id);m_result.insert("ok",false);
     // Checks are strictly offline; they cannot navigate or send in a real account.
     NavigationPane *navigation=qobject_cast<NavigationPane*>(m_root.data());
-    if (m_live->ready() || !navigation) {
+    const QString operation=request.value("action").toString();
+    if(operation=="session-state" || operation=="resume-saved" || operation=="stop-session" || operation=="live-people" || operation=="disable-checks") {
+        if(operation=="resume-saved" && m_session->hasSavedConfiguration()) {
+            m_resumeSaved=true;
+            if(m_session->phase()=="stopped")m_session->start();else resumeSaved();
+        }
+        if(operation=="stop-session"){m_resumeSaved=false;m_session->stop();}
+        if(operation=="live-people" && m_live->ready())m_live->loadContacts();
+        if(operation=="disable-checks"){m_resumeSaved=false;QFile::remove(m_directory+"/enabled");m_timer.stop();m_checks=false;}
+        m_result.insert("ok",true);m_result.insert("metadata_only",true);
+    } else if (m_live->ready() || !navigation) {
         m_result.insert("error","demo_only");
     } else {
         const QString action=request.value("action").toString();
         bool ok=false;
         if (action=="demo-list" && navigation->count()==1) {
             navigation->setProperty("demo",true);ok=true;
+        } else if(action=="contacts" && navigation->count()==1){
+            navigation->setProperty("demo",true);
+            ImageButton *button=navigation->top()->titleBar()->findChild<ImageButton*>("newChatButton");
+            ok=button && QMetaObject::invokeMethod(button,"clicked");
         } else if (action=="chat-tab" && navigation->count()==1) {
             SegmentedControl *tabs=navigation->top()->findChild<SegmentedControl*>("chatTabs");
             if(tabs){tabs->setSelectedIndex(request.value("index").toInt()==1?1:0);ok=true;}
@@ -94,9 +118,9 @@ void UiTools::checkRequest()
         } else if(action=="archive-view" && navigation->count()==1) {
             ActionItem *item=navigation->top()->findChild<ActionItem*>("archiveAction");
             ok=item && QMetaObject::invokeMethod(item,"triggered");
-        } else if (action=="demo-chat" && navigation->count()==1) {
+        } else if ((action=="demo-chat" || action=="demo-channel") && navigation->count()==1) {
             navigation->setProperty("demo",true);
-            const QString id=request.value("group").toBool()?"demo-project":"demo-anna";
+            const QString id=action=="demo-channel"?"demo-design":request.value("group").toBool()?"demo-project":"demo-anna";
             ok=QMetaObject::invokeMethod(navigation,"openChatById",Q_ARG(QVariant,QVariant(id)),Q_ARG(QVariant,QVariant(QString())));
         } else if (action=="reference" && navigation->count()==1) {
             navigation->setProperty("demo",true);m_demo->openChat("demo-anna");
@@ -117,6 +141,17 @@ void UiTools::checkRequest()
             if(action=="scroll-top" || action=="scroll-bottom") {
                 ListView *list=page->findChild<ListView*>(page->objectName()=="searchPage"?"searchResults":"messageList");
                 if(list){list->scrollToPosition(action=="scroll-top"?ScrollPosition::Beginning:ScrollPosition::End,ScrollAnimation::None);ok=true;}
+            } else if(page->objectName()=="contactsPage"){
+                if(action=="contact-query"){
+                    TextField *query=page->findChild<TextField*>("contactSearch");if(query){query->setText(request.value("text").toString().left(128));ok=true;}
+                }else if(action=="contact-tab"){
+                    SegmentedControl *tabs=page->findChild<SegmentedControl*>("contactTabs");if(tabs){tabs->setSelectedIndex(request.value("index").toInt()==1?1:0);ok=true;}
+                }else if(action=="contact-open" && m_demo->contactCount()>0){
+                    ListView *list=page->findChild<ListView*>("contactsList");
+                    ok=list && QMetaObject::invokeMethod(list,"triggered",Q_ARG(QVariantList,QVariantList()<<qBound(0,request.value("index").toInt(),m_demo->contactCount()-1)));
+                }
+            } else if(action=="presence"){
+                m_demo->demoPresence(request.value("status").toString());ok=true;
             } else if(action=="incoming") {
                 ok=m_demo->injectIncomingDemo();
             } else if(page->objectName()=="chatInfoPage") {
@@ -191,6 +226,7 @@ void UiTools::finishCheck()
     const bool demoPage=navigation && navigation->top() && !m_live->ready() &&
         navigation->property("demo").toBool() && (navigation->count()==1 ||
         navigation->top()->objectName()=="searchPage" ||
+        navigation->top()->objectName()=="contactsPage" ||
         navigation->top()->objectName()=="chatInfoPage" || navigation->top()->objectName()=="forwardPage" ||
         (navigation->top()->objectName()=="chatPage" && !navigation->top()->property("liveChat").toBool()));
     if(demoPage) {
@@ -222,6 +258,19 @@ void UiTools::finishCheck()
         m_result.insert("search_count",m_search->count());
         m_result.insert("target_index",m_demo->targetMessageIndex());
         m_result.insert("target_message",m_demo->targetMessageId());
+        m_result.insert("contact_count",m_demo->contactCount());
+        QVariantList contactRows;
+        for(int i=0;i<m_demo->contactCount();++i)contactRows.append(m_demo->contacts()->data(QVariantList()<<i));
+        m_result.insert("contact_rows",contactRows);
+        m_result.insert("status_text",m_demo->currentChatStatus());m_result.insert("status_active",m_demo->currentStatusActive());
+        m_result.insert("composer_visible",page->property("composerVisible"));
+        QObject *messageList=page->findChild<QObject*>("messageList");if(messageList)m_result.insert("message_list_height",messageList->property("measuredHeight"));
+        QSet<AvatarImage*> pictures;
+        foreach(AvatarImage *picture,page->findChildren<AvatarImage*>())pictures.insert(picture);
+        if(page->titleBar())foreach(AvatarImage *picture,page->titleBar()->findChildren<AvatarImage*>())pictures.insert(picture);
+        int photoCount=0;foreach(AvatarImage *picture,pictures)if(!picture->source().isEmpty())++photoCount;
+        m_result.insert("photo_count",photoCount);
+        m_result.insert("demo_avatar_cached",!m_avatars->url("demo:anna").isEmpty());
         m_result.insert("composer_mode",m_demo->composerContext().value("mode"));
         m_result.insert("forward_state",m_demo->forwardSelection().value("state"));
         m_result.insert("info",m_demo->chatInfo());
@@ -244,7 +293,11 @@ void UiTools::finishCheck()
             m_result.insert("search_chat_ids",ids);
         }
     }
-    m_result.insert("capture_ok",demoPage && m_result.value("ok").toBool() && capture(m_directory+"/"+m_id+".png"));
+    m_result.insert("ready",m_live->ready());m_result.insert("phase",m_session->phase());m_result.insert("has_saved_api",m_session->hasSavedConfiguration());
+    if(m_live->ready()){
+        m_result.insert("live_contact_count",m_live->contactCount());m_result.insert("live_contacts_loading",m_live->contactsLoading());m_result.insert("live_contacts_error",m_live->contactsError());
+    }
+    m_result.insert("capture_ok",!m_result.value("metadata_only").toBool() && demoPage && m_result.value("ok").toBool() && capture(m_directory+"/"+m_id+".png"));
     PrivateFile::write(m_directory+"/result.json",m_result,16384);
     m_pending=false;
 #endif

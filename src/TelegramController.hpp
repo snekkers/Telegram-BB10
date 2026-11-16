@@ -6,6 +6,7 @@
 #include <bb/cascades/pickers/FilePicker>
 #include <bb/multimedia/AudioRecorder>
 #include <QTimer>
+#include <QPointer>
 
 class TelegramController : public QObject {
     Q_OBJECT
@@ -53,6 +54,15 @@ class TelegramController : public QObject {
     Q_PROPERTY(int forwardSerial READ forwardSerial NOTIFY changed)
     Q_PROPERTY(int recipientCount READ recipientCount NOTIFY changed)
     Q_PROPERTY(bool canLoadRecipientChats READ canLoadRecipientChats NOTIFY changed)
+    Q_PROPERTY(bb::cascades::DataModel* contacts READ contacts CONSTANT)
+    Q_PROPERTY(int contactCount READ contactCount NOTIFY changed)
+    Q_PROPERTY(bool contactsLoading READ contactsLoading NOTIFY changed)
+    Q_PROPERTY(bool openingContact READ openingContact NOTIFY changed)
+    Q_PROPERTY(QString contactsError READ contactsError NOTIFY changed)
+    Q_PROPERTY(QString currentChatStatus READ currentChatStatus NOTIFY changed)
+    Q_PROPERTY(bool currentStatusActive READ currentStatusActive NOTIFY changed)
+    Q_PROPERTY(QString currentAvatarKey READ currentAvatarKey NOTIFY changed)
+    Q_PROPERTY(bool composerVisible READ composerVisible NOTIFY changed)
 public:
     explicit TelegramController(TelegramStore *store, QObject *parent = 0);
     bb::cascades::DataModel *chats() const { return m_chats; }
@@ -107,6 +117,20 @@ public:
     Q_INVOKABLE bool setNotifications(bool value) { return m_store->setNotifications(value); }
     Q_INVOKABLE void refreshRecipients();
     Q_INVOKABLE void setRecipientQuery(const QString &query) { const QString next=query.trimmed().left(128);if(next==m_recipientQuery)return;m_recipientQuery=next;refreshRecipients(); }
+    bb::cascades::DataModel *contacts() const {return m_contacts;}
+    int contactCount() const {return m_contacts->size();}
+    bool contactsLoading() const {return m_store->contactsLoading();}
+    bool openingContact() const {return m_store->openingContact();}
+    QString contactsError() const {return m_store->contactsError();}
+    QString currentChatStatus() const {return m_store->currentChatStatus();}
+    bool currentStatusActive() const {return m_store->currentStatusActive();}
+    QString currentAvatarKey() const {return m_store->currentAvatarKey();}
+    bool composerVisible() const {return m_store->composerVisible();}
+    Q_INVOKABLE void loadContacts(){m_store->loadContacts();}
+    Q_INVOKABLE void setContactQuery(const QString &text){m_store->setContactQuery(text);}
+    Q_INVOKABLE void setContactSection(int section){m_store->setContactSection(section);}
+    Q_INVOKABLE bool openContact(const QString &id,QObject *target);
+    Q_INVOKABLE void cancelContactOpen();
     Q_INVOKABLE bool openChat(const QString &id) { leaveAttachment(); return m_store->openChat(id); }
     Q_INVOKABLE void closeChat() { leaveAttachment(); m_store->closeChat(); }
     Q_INVOKABLE bool sendText(const QString &text) { return m_store->sendText(text); }
@@ -139,6 +163,8 @@ signals:
     void changed();
 private slots:
     void updateChats();
+    void updateContacts();
+    void contactReady(const QString &id);
     void updateInfoRows();
     void incoming();
     void forwardReady();
@@ -162,6 +188,8 @@ private:
     bb::multimedia::AudioRecorder m_recorder;
     QTimer m_recordLimit;
     QVariantMap m_attachment;
+    bb::cascades::ArrayDataModel *m_contacts;
+    QPointer<QObject> m_contactTarget;
     QString m_recipientQuery;
     QString m_attachmentChat, m_pickerChat, m_pickerKind, m_mediaError;
     bool m_recording;

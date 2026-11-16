@@ -31,8 +31,10 @@ ChatController::ChatController(QObject *parent)
     , m_messages(new bb::cascades::ArrayDataModel(this))
     , m_infoRows(new bb::cascades::ArrayDataModel(this))
     , m_recipients(new bb::cascades::GroupDataModel(QStringList() << "order",this))
+    , m_contacts(new bb::cascades::ArrayDataModel(this)),m_contactSection(0)
     , m_archiveView(false),m_infoSection(0),m_incomingSerial(0),m_forwardSerial(0)
 {
+    m_typingTimer.setSingleShot(true);connect(&m_typingTimer,SIGNAL(timeout()),this,SLOT(clearDemoTyping()));
     m_chats->setGrouping(bb::cascades::ItemGrouping::None);
     m_recipients->setGrouping(bb::cascades::ItemGrouping::None);
     addDemoChat("demo-saved", QString::fromUtf8("Избранное"),
@@ -76,7 +78,8 @@ void ChatController::addDemoChat(const QString &id, const QString &title,
     row.insert("time", QDateTime::currentDateTime().toString("HH:mm"));
     row.insert("unreadLabel", order == 1 ? QString("2") : QString());
     row.insert("pinned",false);row.insert("archived",false);
-    row.insert("personal", id == "demo-saved" || id == "demo-anna");
+    row.insert("personal", id!="demo-bb10" && id!="demo-project" && id!="demo-design");
+    row.insert("avatarKey",id=="demo-anna"?"demo:anna":id=="demo-bb10" || id=="demo-design" || id=="demo-boris"?"demo:classic":"");
     m_chatRows.append(row);
 
     QVariantList history;
@@ -104,6 +107,7 @@ void ChatController::refreshChats()
             QVariantMap sorted=row;sorted.insert("order",row.value("pinned").toBool()?row.value("order").toInt()-100:row.value("order").toInt());m_chats->insert(sorted);
         }
     }
+    if(m_contactSection==1)refreshContacts();
     emit currentChatChanged();
 }
 
@@ -132,7 +136,7 @@ bool ChatController::openChatAt(const QString &chatId,const QString &messageId)
         return false;
     }
 
-    m_context.clear();m_forward.clear();
+    m_context.clear();m_forward.clear();m_typingTimer.stop();m_demoStatus.clear();
     m_currentChatId = chatId;
     m_targetMessage = messageId;
     for (int i = 0; i < m_chatRows.size(); ++i) {
@@ -161,7 +165,7 @@ void ChatController::closeChat()
 bool ChatController::sendDemoMessage(const QString &text)
 {
     const QString body = text.trimmed();
-    if (m_currentChatId.isEmpty() || body.isEmpty()) {
+    if (m_currentChatId.isEmpty() || !composerVisible() || body.isEmpty()) {
         return false;
     }
 

@@ -67,6 +67,7 @@ Page {
         Label { visible: _search.loading; text: qsTr("Поиск…"); textStyle.color: Color.create(Ui.secondary); leftMargin: ui.du(2) }
         Label { visible: _search.errorText.length > 0; text: _search.errorText; textFormat: TextFormat.Plain; multiline: true; textStyle.color: Color.create("#a74132"); leftMargin: ui.du(2); rightMargin: ui.du(2) }
         ListView {
+            property variant avatarProvider: _avatars
             id: resultList
             objectName: "searchResults"
             dataModel: _search.results

@@ -7,6 +7,7 @@ Page {
     objectName: "chatPage"
     actionBarVisibility: ChromeVisibility.Hidden
     property bool liveChat: false
+    property bool composerVisible: liveChat?_live.composerVisible:_chat.composerVisible
     property bool sceneReady: false
     property variant composerContext: liveChat?_live.composerContext:_chat.composerContext
     property string composerKey: ""
@@ -40,7 +41,7 @@ Page {
     onLiveChatChanged: {
         if (liveChat && messageField) {
             messageField.text = _live.draftText;
-            messageField.requestFocus();
+            if(composerVisible)messageField.requestFocus();
         }
     }
     shortcuts: [
@@ -82,7 +83,7 @@ Page {
     function focusComposer() {
         var source = liveChat ? _live : _chat;
         if (source.targetMessageId.length > 0) { scrollToTarget(); messageList.requestFocus(); }
-        else {messageList.scrollToPosition(ScrollPosition.End,ScrollAnimation.None);messageField.requestFocus();}
+        else {messageList.scrollToPosition(ScrollPosition.End,ScrollAnimation.None);if(composerVisible)messageField.requestFocus();else messageList.requestFocus();}
     }
     function showLatest() {
         if(liveChat && _live.targetMessageId.length>0)_live.latestMessages();
@@ -99,7 +100,10 @@ Page {
 
     titleBar: AppHeader {
         caption: chatPage.liveChat ? (_live.currentChatTitle || "Telegram") : _chat.currentChatTitle
-        detail: chatPage.liveChat ? _live.connectionStatus : qsTr("Демо · без отправки в Telegram")
+        detail: chatPage.liveChat ? _live.currentChatStatus : _chat.currentChatStatus
+        detailActive: chatPage.liveChat?_live.currentStatusActive:_chat.currentStatusActive
+        avatarVisible: true
+        avatarKey: chatPage.liveChat?_live.currentAvatarKey:_chat.currentAvatarKey
         compact: true
         menuVisible: true
         onMenuRequested: _ui.openMenu(chatPage)
@@ -168,14 +172,17 @@ Page {
         }
 
         ListView {
+            property variant avatarProvider: _avatars
             id: messageList
             objectName: "messageList"
             stickToEdgePolicy: ListViewStickToEdgePolicy.End
+            property bool canReply: chatPage.composerVisible && (!chatPage.liveChat || _live.canSend)
             property bool editingContext: chatPage.composerContext.mode==="edit"
+            property real measuredHeight: 0
             property real rowWidth: ui.du(72)
             attachedObjects: [
                 LayoutUpdateHandler {
-                    onLayoutFrameChanged: messageList.rowWidth = layoutFrame.width
+                    onLayoutFrameChanged: {messageList.rowWidth = layoutFrame.width;messageList.measuredHeight=layoutFrame.height;}
                 },
                 ListScrollStateHandler { id: historyScroll; objectName: "historyScroll"; onAtEndChanged: if(atEnd && navigation.top===chatPage)chatPage.pendingNewCount=0 },
                 AutoPager {
@@ -256,7 +263,7 @@ Page {
                             contextActions: [
                                 ActionSet {
                                     title: qsTr("Сообщение")
-                            ActionItem { objectName: "replyAction-"+(ListItemData.messageId || ""); title: qsTr("Ответить"); imageSource: "asset:///icons/reply-white.png"; enabled: !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"reply") }
+                            ActionItem { objectName: "replyAction-"+(ListItemData.messageId || ""); title: qsTr("Ответить"); imageSource: "asset:///icons/reply-white.png"; enabled: messageItem.ListItem.view.canReply && !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"reply") }
                             ActionItem { objectName: "forwardAction-"+(ListItemData.messageId || ""); title: qsTr("Переслать"); imageSource: "asset:///icons/forward-white.png"; enabled: !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"forward") }
                             ActionItem { objectName: "editAction-"+(ListItemData.messageId || ""); title: qsTr("Изменить"); imageSource: "asset:///icons/edit-white.png"; enabled: !messageItem.ListItem.view.editingContext && ListItemData.outgoing===true && ListItemData.textMessage===true; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"edit") }
                                     ActionItem {
@@ -366,7 +373,7 @@ Page {
             onClicked: chatPage.showLatest()
         }
         Container {
-            visible: (chatPage.composerContext.mode || "").length>0
+            visible: chatPage.composerVisible && (chatPage.composerContext.mode || "").length>0
             background: Color.create("#e5edf2")
             leftPadding: ui.du(2);rightPadding: ui.du(1);topPadding: ui.du(0.5);bottomPadding: ui.du(0.5)
             layout: StackLayout { orientation: LayoutOrientation.LeftToRight }
@@ -381,6 +388,7 @@ Page {
         Container {
             id: composer
             objectName: "composer"
+            visible: chatPage.composerVisible
             property real measuredTop: 0
             property real measuredHeight: 0
             layout: StackLayout {

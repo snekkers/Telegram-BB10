@@ -13,7 +13,7 @@ CustomListItem {
         rightPadding: ui.du(2)
         topPadding: ui.du(1.1)
         bottomPadding: ui.du(1.1)
-        Avatar { title: item.row.title; chatId: item.row.chatId; rightMargin: ui.du(1.8) }
+        Avatar { title: item.row.title; chatId: item.row.chatId;avatarKey: item.row.avatarKey || "";imageProvider: item.ListItem.view?item.ListItem.view.avatarProvider:null; rightMargin: ui.du(1.8) }
         Container {
             layoutProperties: StackLayoutProperties { spaceQuota: 1 }
             topPadding: ui.du(0.1)
@@ -46,10 +46,10 @@ CustomListItem {
                 layout: StackLayout { orientation: LayoutOrientation.LeftToRight }
                 horizontalAlignment: HorizontalAlignment.Fill
                 Label {
-                    text: item.row.preview || qsTr("Нет сообщений")
+                    text: item.row.typingText || item.row.preview || qsTr("Нет сообщений")
                     multiline: false
                     textFormat: TextFormat.Plain
-                    textStyle.color: Color.create(Ui.secondary)
+                    textStyle.color: Color.create(item.row.statusActive?Ui.blue:Ui.secondary)
                     textStyle.base: SystemDefaults.TextStyles.SmallText
                     layoutProperties: StackLayoutProperties { spaceQuota: 1 }
                 }

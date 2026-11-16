@@ -110,7 +110,7 @@ bool TelegramStore::forwardTo(const QString &id){
 }
 QVariantMap TelegramStore::chatInfo() const {
     QVariantMap result=m_info,chat=m_chats.value(m_current);
-    result.insert("title",chat.value("title"));result.insert("chatId",m_current);result.insert("group",chat.value("type")=="chatTypeBasicGroup" || chat.value("type")=="chatTypeSupergroup");
+    result.insert("title",chat.value("title"));result.insert("avatarKey","chat:"+m_current);result.insert("chatId",m_current);result.insert("group",chat.value("type")=="chatTypeBasicGroup" || chat.value("type")=="chatTypeSupergroup");
     result.insert("channel",chat.value("isChannel"));const bool archive=chat.value("archiveOrder").toLongLong()>0;
     result.insert("archived",archive);result.insert("pinned",chat.value(archive?"archivePinned":"mainPinned"));
     const QVariantMap notifications=chat.value("notificationSettings").toMap();
@@ -160,7 +160,7 @@ void TelegramStore::updateInfoRows(){
     QVariantList rows;
     if(m_infoSection==1)foreach(const QVariant &value,m_members) {
         const QVariantMap member=value.toMap();const QVariantMap sender=member.value("member_id").toMap();const QString id=identifier(sender.value("user_id"));
-        QVariantMap row;row.insert("key",id);row.insert("chatId","member:"+id);row.insert("title",m_users.value(id).value("name",ru("Участник")));
+        QVariantMap row;row.insert("key",id);row.insert("chatId","member:"+id);row.insert("avatarKey","user:"+id);row.insert("title",m_users.value(id).value("name",ru("Участник")));
         const QString status=member.value("status").toMap().value("@type").toString();
         row.insert("preview",status=="chatMemberStatusCreator"?ru("Владелец"):status=="chatMemberStatusAdministrator"?ru("Администратор"):ru("Участник"));rows.append(row);
     } else foreach(const QVariant &value,m_shared) {
