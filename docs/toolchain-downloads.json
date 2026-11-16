@@ -1,0 +1,70 @@
+{
+  "checked_date": "2026-10-28",
+  "verification": "Archive metadata only; installers not downloaded or executed. Checksums are supplied by the archive, not independently authenticated publisher checksums.",
+  "files": [
+    {
+      "name": "Momentics IDE/momentics-2.1.2-201503050937.win32.x86_64.setup.exe",
+      "url": "https://archive.org/download/native-SDK-for-blackberry10/Momentics%20IDE/momentics-2.1.2-201503050937.win32.x86_64.setup.exe",
+      "size_bytes": 390998264,
+      "archive_md5": "05c6d9fa2939d69ec677b9bb48537d91",
+      "archive_sha1": "89d053903d1a87d82c37f277a11c77784471ad53",
+      "metadata_url": "https://archive.org/metadata/native-SDK-for-blackberry10"
+    },
+    {
+      "name": "bbndk.win32.tools.10.3.1.12.zip",
+      "url": "https://archive.org/download/bbdevtools/bbndk.win32.tools.10.3.1.12.zip",
+      "size_bytes": 304910772,
+      "archive_md5": "dbaa70183be61f06b418702a9ffbbb8e",
+      "archive_sha1": "177fdd6ebb611802e9919398a159cde21d6d8fe8",
+      "metadata_url": "https://archive.org/metadata/bbdevtools"
+    },
+    {
+      "name": "bbndk.win32.libraries.10.3.1.995.zip",
+      "url": "https://archive.org/download/bbdevtools/bbndk.win32.libraries.10.3.1.995.zip",
+      "size_bytes": 1607600440,
+      "archive_md5": "53d09d60a27b4c13edc464b5bd8f72b7",
+      "archive_sha1": "6a48b68b8e891656eb18083b06eb42192e0d8093",
+      "metadata_url": "https://archive.org/metadata/bbdevtools"
+    },
+    {
+      "name": "bbndk.win32.cshost.10.3.1.995.zip",
+      "url": "https://archive.org/download/bbdevtools/bbndk.win32.cshost.10.3.1.995.zip",
+      "size_bytes": 20829727,
+      "archive_md5": "5498889f16831d0b7b5740ca95227752",
+      "archive_sha1": "87c03522be8823a544804d40df86d796c64782c7",
+      "metadata_url": "https://archive.org/metadata/bbdevtools"
+    },
+    {
+      "name": "bbndk.win32.qconfigmk.10.3.1.995.zip",
+      "url": "https://archive.org/download/bbdevtools/bbndk.win32.qconfigmk.10.3.1.995.zip",
+      "size_bytes": 5492,
+      "archive_md5": "9eb2917691dbbc1bbe1383cf4c885e2b",
+      "archive_sha1": "484046c6dc3b831f9581530826e00f1b1c3ac317",
+      "metadata_url": "https://archive.org/metadata/bbdevtools"
+    },
+    {
+      "name": "bbndk.win32.documents.10.3.1.995.zip",
+      "url": "https://archive.org/download/bbdevtools/bbndk.win32.documents.10.3.1.995.zip",
+      "size_bytes": 32127098,
+      "archive_md5": "b75020d1c64edba0c7504ecbafe54778",
+      "archive_sha1": "3dcdb86f67c69cfe48b0d4bcd611ae56c8f9ebf0",
+      "metadata_url": "https://archive.org/metadata/bbdevtools"
+    },
+    {
+      "name": "bbndk.win32.samples.10.3.1.995.zip",
+      "url": "https://archive.org/download/bbdevtools/bbndk.win32.samples.10.3.1.995.zip",
+      "size_bytes": 103804,
+      "archive_md5": "ce3ca45b50bb292b37235f28d4fc7cf5",
+      "archive_sha1": "579777f3fcdfa89a37bda290fe5122b8c6880ec1",
+      "metadata_url": "https://archive.org/metadata/bbdevtools"
+    },
+    {
+      "name": "BlackBerry10Simulator-Installer-BB10_3_1-2744-Win-201504012145.exe",
+      "url": "https://archive.org/download/blackberry10-device-simulator/BlackBerry10Simulator-Installer-BB10_3_1-2744-Win-201504012145.exe",
+      "size_bytes": 1155977718,
+      "archive_md5": "f13fb595467b80fd4c94d25eecd315a6",
+      "archive_sha1": "a396863376bf0da4e7e1ceb8ba48b5fba4758e83",
+      "metadata_url": "https://archive.org/metadata/blackberry10-device-simulator"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+.DS_Store
+build/
+*.bar
+*.pro.user*
+*.p12
+*.csj
+*.csk
+*.db
+*.sqlite*
+.env
+credentials/
+sessions/

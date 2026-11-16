@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<qnx xmlns="http://www.qnx.com/schemas/application/1.0">
+    <id>org.example.berrygram</id>
+    <name>Berrygram Demo</name>
+    <versionNumber>0.1.0</versionNumber>
+    <buildId>1</buildId>
+    <description>Offline Cascades prototype for BlackBerry Classic.</description>
+    <author>Berrygram Developer</author>
+
+    <initialWindow>
+        <aspectRatio>portrait</aspectRatio>
+        <autoOrients>false</autoOrients>
+        <systemChrome>none</systemChrome>
+    </initialWindow>
+
+    <configuration name="Simulator-Debug">
+        <platformArchitecture>x86</platformArchitecture>
+        <asset path="build/simulator/bin/berrygram" entry="true" type="Qnx/Elf">berrygram</asset>
+    </configuration>
+    <configuration name="Device-Debug">
+        <platformArchitecture>armle-v7</platformArchitecture>
+        <asset path="build/device/bin/berrygram" entry="true" type="Qnx/Elf">berrygram</asset>
+    </configuration>
+
+    <asset path="assets">assets</asset>
+    <permission system="true">run_native</permission>
+    <env var="LD_LIBRARY_PATH" value="app/native/lib:/usr/lib/qt4/lib"/>
+</qnx>
