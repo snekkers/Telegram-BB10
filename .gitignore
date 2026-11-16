@@ -1,6 +1,8 @@
 .DS_Store
 build/
 .assets.index
+__pycache__/
+*.pyc
 *.bar
 *.pro.user*
 *.p12
