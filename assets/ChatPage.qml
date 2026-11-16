@@ -1,4 +1,5 @@
 import bb.cascades 1.3
+import Berrygram 1.0
 import "Ui.js" as Ui
 
 Page {
@@ -6,6 +7,35 @@ Page {
     objectName: "chatPage"
     actionBarVisibility: ChromeVisibility.Hidden
     property bool liveChat: false
+    property bool sceneReady: false
+    property variant composerContext: liveChat?_live.composerContext:_chat.composerContext
+    property string composerKey: ""
+    property string beforeEditDraft: ""
+    property int pendingNewCount: 0
+    property int incomingSerial: liveChat?_live.incomingSerial:_chat.incomingSerial
+    property int forwardSerial: liveChat?_live.forwardSerial:_chat.forwardSerial
+    onCreationCompleted: sceneReady=true
+    onComposerContextChanged: {
+        if(!messageField)return;
+        var mode=composerContext.mode || "";
+        var key=mode+":"+(composerContext.messageId || "");
+        if(key===composerKey)return;
+        var editing=composerKey.indexOf("edit:")===0;
+        composerKey=key;
+        if(mode==="edit") { beforeEditDraft=messageField.text;messageField.text=composerContext.text || "";messageField.requestFocus(); }
+        else if(editing) {messageField.text=liveChat?_live.draftText:beforeEditDraft;}
+        else if(mode==="reply")messageField.requestFocus();
+    }
+    onIncomingSerialChanged: {
+        if(!sceneReady)return;
+        var source=liveChat?_live:_chat;
+        if(navigation.top===chatPage && historyScroll.atEnd && pendingNewCount===0 && source.targetMessageId.length===0)messageList.scrollToPosition(ScrollPosition.End,ScrollAnimation.None);
+        else pendingNewCount+=1;
+    }
+    onForwardSerialChanged: {
+        var source=liveChat?_live:_chat;
+        if(sceneReady && source.forwardSelection.state==="ready")navigation.openForward(liveChat);
+    }
     property int scrollSerial: _live.scrollSerial
     onLiveChatChanged: {
         if (liveChat && messageField) {
@@ -35,8 +65,10 @@ Page {
     function submitDraft() {
         if (messageField.text.trim().length === 0 && (!liveChat || _live.attachmentName.length === 0)) return;
         if (liveChat && !_live.canSendSelected) return;
+        if (!_ui.acceptSubmit(chatPage)) return;
+        var editing=composerContext.mode==="edit";
         var accepted = liveChat ? _live.sendSelected(messageField.text) : _chat.sendDemoMessage(messageField.text);
-        if (accepted) {
+        if (accepted && !editing) {
             messageField.text = "";
             messageList.scrollToPosition(ScrollPosition.End, ScrollAnimation.Default);
             messageField.requestFocus();
@@ -50,7 +82,12 @@ Page {
     function focusComposer() {
         var source = liveChat ? _live : _chat;
         if (source.targetMessageId.length > 0) { scrollToTarget(); messageList.requestFocus(); }
-        else messageField.requestFocus();
+        else {messageList.scrollToPosition(ScrollPosition.End,ScrollAnimation.None);messageField.requestFocus();}
+    }
+    function showLatest() {
+        if(liveChat && _live.targetMessageId.length>0)_live.latestMessages();
+        else messageList.scrollToPosition(ScrollPosition.End,ScrollAnimation.None);
+        pendingNewCount=0;
     }
     function nextUnread() {
         var id = _live.nextUnreadChat();
@@ -68,13 +105,14 @@ Page {
         onMenuRequested: _ui.openMenu(chatPage)
     }
     actions: [
+        ActionItem { objectName: "chatInfoAction"; title: qsTr("Сведения о чате"); imageSource: "asset:///icons/info-white.png"; onTriggered: navigation.openChatInfo(chatPage.liveChat) },
         ActionItem { title: qsTr("Документ"); imageSource: "asset:///icons/attach-white.png"; enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("document") },
         ActionItem { title: qsTr("Фото"); imageSource: "asset:///icons/photo-white.png"; enabled: chatPage.liveChat && _live.canAttach && !_live.recording; onTriggered: _live.chooseAttachment("photo") },
         ActionItem { title: _live.recording ? qsTr("Остановить запись") : qsTr("Голосовое"); imageSource: "asset:///icons/voice-white.png"; enabled: chatPage.liveChat && _live.canAttach; onTriggered: _live.toggleRecording() },
         ActionItem {
-            title: qsTr("История")
+            title: qsTr("Повторить историю")
             imageSource: "asset:///icons/history-white.png"
-            enabled: chatPage.liveChat && _live.canLoadHistory
+            enabled: chatPage.liveChat && _live.canLoadHistory && _live.errorText.length>0
             onTriggered: _live.loadMoreHistory()
         },
         ActionItem {
@@ -132,15 +170,26 @@ Page {
         ListView {
             id: messageList
             objectName: "messageList"
+            stickToEdgePolicy: ListViewStickToEdgePolicy.End
+            property bool editingContext: chatPage.composerContext.mode==="edit"
             property real rowWidth: ui.du(72)
             attachedObjects: [
                 LayoutUpdateHandler {
                     onLayoutFrameChanged: messageList.rowWidth = layoutFrame.width
+                },
+                ListScrollStateHandler { id: historyScroll; objectName: "historyScroll"; onAtEndChanged: if(atEnd && navigation.top===chatPage)chatPage.pendingNewCount=0 },
+                AutoPager {
+                    objectName: "historyPager"
+                    enabled: chatPage.liveChat && navigation.top === chatPage && _live.canLoadHistory && _live.errorText.length === 0
+                    atEdge: historyScroll.atBeginning
+                    contentCount: chatPage.liveChat ? _live.messageCount : 0
+                    onRequestMore: _live.loadMoreHistory()
                 }
             ]
             function downloadMedia(id) { _live.downloadMedia(id); }
             function openMedia(id) { _live.openMedia(id); }
             function copyText(text) { _ui.copyText(text); }
+            function messageAction(id,action) { (chatPage.liveChat?_live:_chat).beginMessageAction(id,action); }
             dataModel: chatPage.liveChat ? _live.messages : _chat.messages
             layoutProperties: StackLayoutProperties {
                 spaceQuota: 1
@@ -207,6 +256,9 @@ Page {
                             contextActions: [
                                 ActionSet {
                                     title: qsTr("Сообщение")
+                            ActionItem { objectName: "replyAction-"+(ListItemData.messageId || ""); title: qsTr("Ответить"); imageSource: "asset:///icons/reply-white.png"; enabled: !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"reply") }
+                            ActionItem { objectName: "forwardAction-"+(ListItemData.messageId || ""); title: qsTr("Переслать"); imageSource: "asset:///icons/forward-white.png"; enabled: !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"forward") }
+                            ActionItem { objectName: "editAction-"+(ListItemData.messageId || ""); title: qsTr("Изменить"); imageSource: "asset:///icons/edit-white.png"; enabled: !messageItem.ListItem.view.editingContext && ListItemData.outgoing===true && ListItemData.textMessage===true; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"edit") }
                                     ActionItem {
                                         title: qsTr("Копировать текст")
                                         imageSource: "asset:///icons/copy-white.png"
@@ -215,6 +267,16 @@ Page {
                                     }
                                 }
                             ]
+                            Label {
+                                visible: ListItemData.forwarded===true
+                                text: (ListItemData.forwardAuthor || "").length>0?qsTr("Переслано от ")+ListItemData.forwardAuthor:qsTr("Пересланное сообщение");textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.blue)
+                            }
+                            Container {
+                                visible: (ListItemData.replyQuote || "").length>0
+                                background: Color.create("#e5edf2")
+                                leftPadding: ui.du(1);rightPadding: ui.du(1);topPadding: ui.du(0.5);bottomPadding: ui.du(0.5)
+                                Label { text: ListItemData.replyQuote || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.blue);maxWidth: Math.min(ui.du(50),messageItem.ListItem.view.rowWidth-ui.du(19)) }
+                            }
                             Label {
                                 visible: ListItemData.showAuthor === true
                                 text: ListItemData.author
@@ -295,6 +357,27 @@ Page {
             onClicked: messageField.text = _live.takeFailedDraft()
         }
 
+        Button {
+            objectName: "newMessagesButton"
+            visible: chatPage.pendingNewCount>0
+            enabled: chatPage.composerContext.mode!=="edit"
+            text: qsTr("Новые сообщения") + " · " + chatPage.pendingNewCount
+            horizontalAlignment: HorizontalAlignment.Center
+            onClicked: chatPage.showLatest()
+        }
+        Container {
+            visible: (chatPage.composerContext.mode || "").length>0
+            background: Color.create("#e5edf2")
+            leftPadding: ui.du(2);rightPadding: ui.du(1);topPadding: ui.du(0.5);bottomPadding: ui.du(0.5)
+            layout: StackLayout { orientation: LayoutOrientation.LeftToRight }
+            Container {
+                layoutProperties: StackLayoutProperties { spaceQuota: 1 }
+                Label { text: chatPage.composerContext.mode==="edit"?qsTr("Редактирование"):qsTr("Ответ") + " · " + (chatPage.composerContext.author || "");textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.blue) }
+                Label { text: chatPage.composerContext.preview || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.secondary) }
+            }
+            Button { objectName: "cancelComposerButton";text: "×";preferredWidth: ui.du(6);minWidth: ui.du(6);maxWidth: ui.du(6);accessibility.name: qsTr("Отменить ответ или редактирование");enabled: !chatPage.liveChat || !_live.sendBusy;onClicked: (chatPage.liveChat?_live:_chat).cancelComposer() }
+        }
+
         Container {
             id: composer
             objectName: "composer"
@@ -365,7 +448,7 @@ Page {
                 defaultImageSource: "asset:///icons/send-normal.png"
                 pressedImageSource: "asset:///icons/send-pressed.png"
                 disabledImageSource: "asset:///icons/send-disabled.png"
-                accessibility.name: qsTr("Отправить сообщение")
+                accessibility.name: chatPage.composerContext.mode==="edit"?qsTr("Сохранить изменения"):qsTr("Отправить сообщение")
                 enabled: (messageField.text.trim().length > 0 || (chatPage.liveChat && _live.attachmentName.length > 0)) && (!chatPage.liveChat || _live.canSendSelected)
                 opacity: enabled ? 1 : 0.45
                 onClicked: chatPage.submitDraft()

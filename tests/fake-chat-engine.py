@@ -10,6 +10,9 @@ assert Path(sys.argv[sys.argv.index("--library") + 1]).is_file()
 A, B, C = -1001234567890, 9007199254740991, -1001234567891
 USER = 9007199254740990
 PUBLIC = -1001234567899
+archive_loaded = False
+actions = []
+forward_race = False
 loaded = False
 held_search = []
 search_calls = []
@@ -53,7 +56,8 @@ def positions(order, name="chatListMain"):
 
 def chat(cid, title, order, can_send=True):
     return {"@type": "chat", "id": cid, "title": title, "positions": positions(order),
-            "type": {"@type": "chatTypePrivate" if cid == B else "chatTypeSupergroup"},
+            "type": {"@type": "chatTypePrivate", "user_id": USER} if cid == B else {"@type": "chatTypeSupergroup", "supergroup_id": 1234, "is_channel": False},
+            "notification_settings": {"@type": "chatNotificationSettings", "use_default_mute_for": True, "mute_for": 0, "use_default_sound": False, "sound_id": "9223372036854775806", "show_preview": False, "use_default_show_preview": False},
             "permissions": {"@type": "chatPermissions", "can_send_basic_messages": can_send, "can_send_documents": can_send, "can_send_photos": can_send, "can_send_voice_notes": can_send},
             "unread_count": 3, "last_read_outbox_message_id": 0, "view_as_topics": False,
             "last_message": message(30, cid)}
@@ -128,6 +132,13 @@ for line in sys.stdin:
         assert query["value"] == {"@type": "optionValueBoolean", "value": True}
         reply(query)
     elif kind == "loadChats":
+        if query["chat_list"] == {"@type": "chatListArchive"}:
+            if archive_loaded:reply(query,"error",code=404,message="All archived chats loaded")
+            else:
+                archive_loaded=True
+                value=chat(44,"Архив",0);value["positions"]=positions(20,"chatListArchive")
+                send({"@type":"updateNewChat","chat":value});reply(query)
+            continue
         assert query["chat_list"] == {"@type": "chatListMain"}
         if loaded:
             reply(query, "error", code=404, message="All chats loaded")
@@ -166,6 +177,56 @@ for line in sys.stdin:
         value = media_file(True, str(path))
         send({"@type": "updateFile", "file": value})
         reply(query, kind="file", **{k: v for k, v in value.items() if k != "@type"})
+    elif kind == "getMessageProperties":
+        actions.append(query)
+        reply(query,"messageProperties",can_be_replied=True,can_be_forwarded=query["message_id"]!=999,can_be_edited=query["message_id"]==50)
+    elif kind == "editMessageText":
+        actions.append(query)
+        assert query["message_id"]==50 and query["reply_markup"] is None
+        body=query["input_message_content"];assert body["@type"]=="inputMessageText"
+        value=message(50,query["chat_id"],body["text"]["text"],True);value["edit_date"]=1700009999
+        reply(query,kind="message",**{k:v for k,v in value.items() if k!="@type"})
+    elif kind == "forwardMessages":
+        actions.append(query)
+        assert query["message_ids"]==[30] and query["from_chat_id"]==A and query["chat_id"]==B
+        assert query["send_copy"] is False and query["remove_caption"] is False and query["options"]["paid_message_star_count"]==0
+        value=message(8800,B,"Forwarded",True);value["forward_info"]={"origin":{"@type":"messageOriginUser","sender_user_id":USER}}
+        if forward_race:
+            forward_race=False
+            final={**value,"id":8801}
+            send({"@type":"updateMessageSendSucceeded","old_message_id":8800,"message":final})
+            value["sending_state"]={"@type":"messageSendingStatePending"}
+        reply(query,"messages",total_count=1,messages=[value])
+    elif kind in ("toggleChatIsPinned","addChatToList"):
+        actions.append(query)
+        if kind=="toggleChatIsPinned":
+            value=positions(9223372036854775807,query["chat_list"]["@type"])[0];value["is_pinned"]=query["is_pinned"]
+            send({"@type":"updateChatPosition","chat_id":query["chat_id"],"position":value})
+        else:
+            target=query["chat_list"]["@type"];other="chatListMain" if target=="chatListArchive" else "chatListArchive"
+            for name,order in [(other,0),(target,100)]:send({"@type":"updateChatPosition","chat_id":query["chat_id"],"position":positions(order,name)[0]})
+        reply(query)
+    elif kind == "getSupergroupFullInfo":
+        actions.append(query);reply(query,"supergroupFullInfo",description="Synthetic group description",member_count=2,can_get_members=True)
+    elif kind == "getUserFullInfo":
+        reply(query,"userFullInfo",bio={"text":"Synthetic bio"})
+    elif kind == "getScopeNotificationSettings":
+        actions.append(query);reply(query,"scopeNotificationSettings",mute_for=0)
+    elif kind == "getSupergroupMembers":
+        actions.append(query);assert query["limit"]==50 and query["filter"] is None
+        send({"@type":"updateUser","user":{"id":42,"first_name":"Участник","last_name":""}})
+        members=[{"member_id":{"@type":"messageSenderUser","user_id":uid},"status":{"@type":"chatMemberStatusMember"}} for uid in [USER,42]] if query["offset"]==0 else []
+        reply(query,"chatMembers",total_count=2,members=members)
+    elif kind == "setChatNotificationSettings":
+        actions.append(query);assert query["notification_settings"]["sound_id"]=="9223372036854775806"
+        assert query["notification_settings"]["show_preview"] is False
+        send({"@type":"updateChatNotificationSettings","chat_id":query["chat_id"],"notification_settings":query["notification_settings"]});reply(query)
+    elif kind == "searchChatMessages":
+        actions.append(query);assert query["query"]=="" and query["sender_id"] is None and query["topic_id"] is None
+        photo=message(20,query["chat_id"]);photo["content"]={"@type":"messagePhoto","caption":{"text":"Общее фото"},"photo":{"sizes":[{"width":1,"height":1,"photo":media_file()}]}}
+        document=message(25,query["chat_id"]);document["content"]={"@type":"messageDocument","caption":{"text":"Файл"},"document":{"file_name":"note.txt","document":media_file()}}
+        rows=[photo] if query["filter"]["@type"]=="searchMessagesFilterPhoto" else [document]
+        reply(query,"foundChatMessages",total_count=1,messages=rows,next_from_message_id=0)
     elif kind == "getChatHistory":
         if hold_next_history:
             hold_next_history = False
@@ -177,6 +238,12 @@ for line in sys.stdin:
         assert query["chat_id"] in (A, B) and isinstance(query["chat_id"], int)
         assert query["options"]["paid_message_star_count"] == 0
         body = query["input_message_content"]
+        if "reply_to" in query:
+            actions.append(query)
+            assert query["reply_to"]["@type"]=="inputMessageReplyToMessage"
+            assert query["reply_to"]["message_id"]==30
+            assert query["reply_to"]["quote"]["text"]["text"]
+
         if body["@type"] != "inputMessageText":
             types = {"inputMessageDocument": ("document", "inputDocument", "messageDocument"),
                      "inputMessagePhoto": ("photo", "inputPhoto", "messagePhoto"),
@@ -258,7 +325,9 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "releaseSearch":
+        if op == "forwardRace":
+            forward_race = True
+        elif op == "releaseSearch":
             for request in held_search:
                 reply(request, "chats", total_count=1, chat_ids=[C])
             held_search.clear()
@@ -295,7 +364,7 @@ for line in sys.stdin:
             held_sends.clear()
         else:
             assert op == "stats", op
-        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local, search_calls=search_calls)
+        reply(query, "fixtureStats", send_count=sent_count, last_only_local=last_only_local, search_calls=search_calls, actions=actions)
     else:
         raise AssertionError(kind)
 

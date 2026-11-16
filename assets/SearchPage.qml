@@ -1,4 +1,5 @@
 import bb.cascades 1.3
+import Berrygram 1.0
 import "Ui.js" as Ui
 
 Page {
@@ -70,6 +71,17 @@ Page {
             objectName: "searchResults"
             dataModel: _search.results
             layoutProperties: StackLayoutProperties { spaceQuota: 1 }
+            stickToEdgePolicy: ListViewStickToEdgePolicy.Beginning
+            attachedObjects: [
+                ListScrollStateHandler { id: resultScroll; objectName: "resultScroll" },
+                AutoPager {
+                    objectName: "resultPager"
+                    enabled: navigation.top === searchPage && _search.canLoadMore && _search.errorText.length === 0
+                    atEdge: resultScroll.atEnd
+                    contentCount: _search.count
+                    onRequestMore: _search.loadMore()
+                }
+            ]
             function itemType(data,indexPath) { return "result"; }
             listItemComponents: [ ListItemComponent { type: "result"; ChatRow { row: ListItemData } } ]
             onTriggered: searchPage.activateRow(dataModel.data(indexPath))
@@ -81,6 +93,5 @@ Page {
         }
         Button { visible: query.text.trim().length === 0 && _search.recentQueries.length > 0 && !(searchPage.mode === 2 && searchPage.filter > 0); text: qsTr("Очистить недавние запросы"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: _search.clearRecent() }
         Button { visible: _search.errorText.length > 0 && !_search.loading; text: qsTr("Повторить поиск"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: _search.retry() }
-        Button { visible: _search.canLoadMore; text: qsTr("Загрузить ещё результаты"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: _search.loadMore() }
     }
 }

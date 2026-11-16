@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QPointer>
 #include <QTimer>
+#include <QElapsedTimer>
 #include <QVariantMap>
 class ChatController;
 class TelegramController;
@@ -18,6 +19,7 @@ public:
     bool checksEnabled() const { return m_checks; }
     Q_INVOKABLE void openMenu(QObject *page);
     Q_INVOKABLE void copyText(const QString &text);
+    Q_INVOKABLE bool acceptSubmit(QObject *page);
 private slots:
     void checkRequest();
     void finishCheck();
@@ -31,5 +33,8 @@ private:
     QString m_directory, m_id;
     QVariantMap m_result;
     bool m_checks, m_pending;
+    QElapsedTimer m_submitClock;
+    QPointer<QObject> m_submitPage;
+    qlonglong m_lastSubmitMs;
 };
 #endif

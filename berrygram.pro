@@ -40,3 +40,8 @@ OTHER_FILES += $$files($$PWD/assets/*.qml) $$PWD/assets/Ui.js
 
 SOURCES += $$PWD/src/LocalOutbox.cpp
 HEADERS += $$PWD/src/LocalOutbox.hpp
+
+SOURCES += $$PWD/src/AutoPager.cpp
+HEADERS += $$PWD/src/AutoPager.hpp
+SOURCES += $$PWD/src/TelegramStoreActions.cpp
+SOURCES += $$PWD/src/DemoActions.cpp

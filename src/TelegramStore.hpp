@@ -26,10 +26,28 @@ public:
     int communityCount() const;
     QString targetMessageId() const { return m_targetMessage; }
     int targetMessageIndex() const;
+    bool archiveView() const { return m_archiveView; }
+    void setArchiveView(bool value);
+    bool setPinned(const QString &chatId, bool value);
+    bool setArchived(const QString &chatId, bool value);
+    QVariantMap composerContext() const { return m_composerContext; }
+    QVariantMap forwardSelection() const { return m_forward; }
+    bool beginMessageAction(const QString &messageId, const QString &action);
+    void cancelComposer();
+    bool forwardTo(const QString &chatId);
+    QVariantMap chatInfo() const;
+    QVariantList infoRows() const { return m_infoRows; }
+    bool infoLoading() const { return m_infoLoading; }
+    bool canLoadInfo() const { return !m_infoLoading && !m_infoEnd && !m_current.isEmpty(); }
+    QString infoError() const { return m_infoError; }
+    void loadChatInfo();
+    void setInfoSection(int section);
+    void loadMoreInfo();
+    bool setNotifications(bool enabled);
     bool ready() const { return m_ready; }
     bool loadingChats() const { return m_loadingChats; }
     bool loadingHistory() const { return m_loadingHistory; }
-    bool canLoadChats() const { return m_ready && !m_loadingChats && !m_chatsEnd; }
+    bool canLoadChats() const { return m_ready && !m_loadingChats && !(m_archiveView ? m_archiveEnd : m_chatsEnd); }
     bool canLoadHistory() const { return m_ready && !m_current.isEmpty() && !m_loadingHistory && !m_historyEnd; }
     bool canSend() const;
     bool canSendMedia(const QString &kind) const;
@@ -66,6 +84,8 @@ public:
     bool openChatAt(const QString &id, const QString &messageId);
     void closeChat();
     void loadMoreChats();
+    bool canLoadRecipientChats() const { return m_ready && !m_loadingChats && (!m_chatsEnd || !m_archiveEnd); }
+    void loadMoreRecipientChats();
     void loadMoreHistory();
     bool sendText(const QString &text);
     QString takeFailedDraft();
@@ -75,6 +95,10 @@ signals:
     void messagesChanged();
     void changed();
     void scrollRequested();
+    void incomingMessage();
+    void forwardReady();
+    void infoChanged();
+    void recipientChatsChanged();
 
 public slots:
     void consume(const QVariantMap &object);
@@ -98,8 +122,13 @@ private:
     QVariantMap fileInfo(const QVariantMap &file) const;
     void updateFile(const QVariantMap &file);
     void history(bool initial);
+    void loadChats(bool archive);
     void response(const QVariantMap &object, const QVariantMap &request);
     bool sendContent(const QVariantMap &content, const QString &text, const QVariantMap &attachment = QVariantMap());
+    bool editText(const QString &text);
+    void applyMessageAction(const QString &messageId, const QString &action);
+    void updateInfoRows();
+    bool actionResponse(const QVariantMap &object, const QVariantMap &pending);
 
     void suspendLocalSends();
     void restoreChatDraft(const QString &id, const QVariant &remote);
@@ -114,7 +143,7 @@ private:
     QElapsedTimer m_clock;
     int m_requestTimeoutMs;
     QMap<QString, QVariantMap> m_chats, m_users, m_requests, m_outbox;
-    QMap<QString, QVariantMap> m_failedAttachments, m_sentAttachments;
+    QMap<QString, QVariantMap> m_failedAttachments, m_sentAttachments, m_earlyForwards;
     QMap<QString, QString> m_failedDrafts, m_earlyAttachmentOutcomes;
     QMap<QString, QString> m_drafts, m_dirtyDrafts, m_draftInFlight;
     QMap<qlonglong, QVariantMap> m_messages, m_overlays;
@@ -123,10 +152,16 @@ private:
     QSet<QString> m_recoveredTexts;
     QSet<qlonglong> m_historyTouched, m_removed;
     QVariantList m_chatRows, m_messageRows;
+    QVariantMap m_composerContext, m_forward, m_info;
+    QVariantList m_infoRows, m_members, m_shared;
+    QString m_infoError, m_infoCursor;
+    int m_infoSection, m_memberOffset;
+    unsigned m_actionSerial, m_infoSerial;
     QString m_current, m_error, m_connection, m_seenPhase, m_search, m_chatCategory, m_targetMessage;
     qlonglong m_historyCursor;
     unsigned m_generation;
     bool m_ready, m_loadingChats, m_loadingHistory, m_chatsEnd, m_historyEnd, m_online;
+    bool m_archiveView, m_archiveEnd, m_infoLoading, m_infoEnd;
     Q_DISABLE_COPY(TelegramStore)
 };
 #endif

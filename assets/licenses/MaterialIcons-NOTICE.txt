@@ -29,3 +29,21 @@ search: https://raw.githubusercontent.com/google/material-design-icons/master/sr
 Original SVG SHA-256: c25d4cdca9972ef7ed9f8e9f32553d0444afd6a7cf8cc6ca9eebf5b4073ef308
 settings: https://raw.githubusercontent.com/google/material-design-icons/master/src/action/settings/materialicons/24px.svg
 Original SVG SHA-256: 86a35d4b8dd844c6a89f6b195b1600367cb52b8465847a0e7bbc8b3365c3983d
+
+reply: https://raw.githubusercontent.com/google/material-design-icons/master/src/content/reply/materialicons/24px.svg
+Original SVG SHA-256: 5c1de44566257ccdb39a06e39db3a527cdf9c4f4ae4bc8464c981d04492a997f
+
+forward: https://raw.githubusercontent.com/google/material-design-icons/master/src/content/forward/materialicons/24px.svg
+Original SVG SHA-256: 68fe6920de26a3c141af20c13a9af4f6459f5da24cb4c0f7d3080c8dd4be222f
+
+edit: https://raw.githubusercontent.com/google/material-design-icons/master/src/image/edit/materialicons/24px.svg
+Original SVG SHA-256: 2301568113724db8d9e6c1cdf649d16af34da24e223a1f6a295d867a2b2037c9
+
+info: https://raw.githubusercontent.com/google/material-design-icons/master/src/action/info_outline/materialicons/24px.svg
+Original SVG SHA-256: a42754d3d043129a6ab28d33afa624375aa6e831c89159716610fe4d9016e8f3
+
+pin: https://raw.githubusercontent.com/google/material-design-icons/master/src/content/push_pin/materialicons/24px.svg
+Original SVG SHA-256: 93e72d0395250e7a75c702dc0df010e6756dded05ffcebe72bb9715788518a8f
+
+archive: https://raw.githubusercontent.com/google/material-design-icons/master/src/content/archive/materialicons/24px.svg
+Original SVG SHA-256: 2109d348fcdfb609639ea31484cb2e7267b181358644d533585c8d10750f5d36

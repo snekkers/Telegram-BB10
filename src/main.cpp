@@ -4,6 +4,7 @@
 #include "TelegramController.hpp"
 #include "UiTools.hpp"
 #include "SearchController.hpp"
+#include "AutoPager.hpp"
 
 #include <bb/cascades/AbstractPane>
 #include <bb/cascades/Application>
@@ -13,6 +14,7 @@
 #include <bb/cascades/Color>
 #include <QDebug>
 #include <QCoreApplication>
+#include <QtDeclarative/qdeclarative.h>
 #include <cstdlib>
 
 Q_DECL_EXPORT int main(int argc, char **argv)
@@ -20,6 +22,7 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     bb::cascades::Application app(argc, argv);
     app.themeSupport()->setVisualStyleAndPrimaryColor(bb::cascades::VisualStyle::Bright,
         bb::cascades::Color::fromARGB(0xff5288b7), bb::cascades::Color::fromARGB(0xff42739d));
+    qmlRegisterType<AutoPager>("Berrygram", 1, 0, "AutoPager");
     ChatController controller;
     TelegramSession telegram;
     TelegramStore store(&telegram);

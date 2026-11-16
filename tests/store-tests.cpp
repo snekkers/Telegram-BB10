@@ -1,6 +1,7 @@
 #include "TelegramSession.hpp"
 #include "TelegramStore.hpp"
 #include "TelegramSearch.hpp"
+#include "AutoPager.hpp"
 #include "LocalOutbox.hpp"
 #include "PrivateFile.hpp"
 #include "MessagePresentation.hpp"
@@ -86,6 +87,94 @@ private:
     }
 
 private slots:
+    void autoPagerWaitsForLayoutAndDoesNotSpinOrLoadHiddenPages() {
+        AutoPager pager(0,40);QSignalSpy requests(&pager,SIGNAL(requestMore()));
+        pager.setEnabled(true);pager.setAtEdge(true);pager.setContentCount(1);
+        pager.setAtEdge(false);QTest::qWait(60);QCOMPARE(requests.size(),0);
+        pager.setAtEdge(true);QTRY_COMPARE(requests.size(),1);
+        QTest::qWait(100);QCOMPARE(requests.size(),1);
+        pager.setContentCount(2);pager.setEnabled(false);QTest::qWait(60);QCOMPARE(requests.size(),1);
+        pager.setEnabled(true);QTRY_COMPARE(requests.size(),2);
+        pager.setEnabled(false);pager.setContentCount(3);QTest::qWait(60);QCOMPARE(requests.size(),2);
+    }
+    void replyQuoteAndEditRequireServerPermissionAndKeepDraft() {
+        Peer peer;ready(peer);open(peer);
+        peer.store.setDraft("ordinary draft");
+        QVERIFY(peer.store.beginMessageAction("30","reply"));
+        QTRY_COMPARE(peer.store.composerContext().value("mode").toString(),QString("reply"));
+        QVERIFY(!peer.store.composerContext().value("replyTo").toMap().value("quote").toMap().isEmpty());
+        QVERIFY(peer.store.sendText("quoted answer"));QTRY_VERIFY(!peer.store.sendBusy());
+        QVERIFY(peer.store.composerContext().isEmpty());
+        QVariantMap incoming=object("updateNewMessage"),message=object("message");
+        message.insert("chat_id",A.toLongLong());message.insert("id",50);message.insert("is_outgoing",true);message.insert("content",content("original"));incoming.insert("message",message);update(peer,incoming);
+        peer.store.setDraft("keep me");
+        QVERIFY(peer.store.beginMessageAction("50","edit"));QTRY_COMPARE(peer.store.composerContext().value("mode").toString(),QString("edit"));
+        QVERIFY(!peer.store.canSendMedia("document"));
+        peer.store.setDraft("editing must not replace ordinary draft");QCOMPARE(peer.store.draftText(),QString("keep me"));
+        QVERIFY(peer.store.sendText("edited text"));QTRY_VERIFY(!peer.store.sendBusy());
+        QCOMPARE(row(peer.store,"50").value("text").toString(),QString("edited text"));QVERIFY(row(peer.store,"50").value("edited").toBool());
+        QCOMPARE(peer.store.draftText(),QString("keep me"));QVERIFY(peer.store.composerContext().isEmpty());
+        QVERIFY(peer.store.beginMessageAction("30","edit"));QTest::qWait(80);QVERIFY(peer.store.composerContext().isEmpty());QVERIFY(!peer.store.errorText().isEmpty());
+    }
+    void forwardIsExplicitJournaledAndKeepsOriginalReference() {
+        Peer peer;ready(peer);open(peer);
+        QVERIFY(peer.store.beginMessageAction("30","forward"));QTRY_COMPARE(peer.store.forwardSelection().value("state").toString(),QString("ready"));
+        QCOMPARE(control(peer,"stats").value("actions").toList().size(),1);
+        QVERIFY(peer.store.forwardTo(B));QVERIFY(!peer.store.forwardTo(B));
+        QTRY_COMPARE(peer.store.forwardSelection().value("state").toString(),QString("sent"));
+        LocalOutbox journal(peer.session.dataDirectory());QVERIFY(journal.open());
+        const QVariantMap sent=journal.latest("9007199254740990",B,"forward",QStringList()<<"sent");QVERIFY(!sent.isEmpty());
+        QCOMPARE(sent.value("sourceChatId").toString(),A);QCOMPARE(sent.value("sourceMessageId").toString(),QString("30"));
+    }
+    void forwardingSuccessBeforeResponseNeverBecomesPendingAgain() {
+        Peer peer;ready(peer);open(peer);QVERIFY(!control(peer,"forwardRace").isEmpty());
+        QVERIFY(peer.store.beginMessageAction("30","forward"));QTRY_COMPARE(peer.store.forwardSelection().value("state").toString(),QString("ready"));
+        QVERIFY(peer.store.forwardTo(B));QTRY_COMPARE(peer.store.forwardSelection().value("state").toString(),QString("sent"));
+        LocalOutbox journal(peer.session.dataDirectory());QVERIFY(journal.open());
+        QCOMPARE(journal.latest("9007199254740990",B,"forward",QStringList()<<"sent").value("messageId").toString(),QString("8801"));
+        QVERIFY(!peer.store.forwardTo(B));
+    }
+    void quoteUsesUpdatedTextAndClipsFormattingAtItsBoundary() {
+        Peer peer;ready(peer);open(peer);
+        QVariantMap changed=object("updateMessageContent");changed.insert("message_id",30);
+        QVariantMap next=content(QString(140,'x')),formatted=next.value("text").toMap();
+        QVariantMap bold=object("textEntity");bold.insert("offset",0);bold.insert("length",140);bold.insert("type",object("textEntityTypeBold"));
+        QVariantMap date=object("textEntity");date.insert("offset",120);date.insert("length",20);date.insert("type",object("textEntityTypeDateTime"));
+        formatted.insert("entities",QVariantList()<<bold<<date);next.insert("text",formatted);changed.insert("new_content",next);update(peer,changed);
+        QVERIFY(peer.store.beginMessageAction("30","reply"));QTRY_COMPARE(peer.store.composerContext().value("mode").toString(),QString("reply"));
+        const QVariantMap quote=peer.store.composerContext().value("replyTo").toMap().value("quote").toMap().value("text").toMap();
+        QCOMPARE(quote.value("text").toString(),QString(120,'x'));QCOMPARE(quote.value("entities").toList().first().toMap().value("length").toInt(),120);
+        QVERIFY(peer.store.openChat(A));QVERIFY(!peer.store.composerContext().isEmpty());peer.store.cancelComposer();QVERIFY(peer.store.composerContext().isEmpty());
+    }
+    void chatInfoMembersMediaNotificationsAndArchiveUseExactApi() {
+        Peer peer;ready(peer);open(peer);peer.store.loadChatInfo();
+        QTRY_COMPARE(peer.store.chatInfo().value("description").toString(),QString("Synthetic group description"));
+        QTRY_VERIFY(peer.store.chatInfo().value("notificationsKnown").toBool());
+        QVERIFY(peer.store.setNotifications(false));QTRY_VERIFY(!peer.store.chatInfo().value("notificationsOn").toBool());
+        peer.store.setInfoSection(1);QTRY_VERIFY(!peer.store.infoLoading());QCOMPARE(peer.store.infoRows().size(),2);
+        peer.store.setInfoSection(2);QTRY_VERIFY(!peer.store.infoLoading());QCOMPARE(peer.store.infoRows().size(),1);QVERIFY(!peer.store.canLoadInfo());
+        QCOMPARE(peer.store.infoRows().first().toMap().value("messageId").toString(),QString("20"));
+        peer.store.setInfoSection(3);QTRY_VERIFY(!peer.store.infoLoading());QCOMPARE(peer.store.infoRows().size(),1);
+        QVERIFY(peer.store.setPinned(A,true));QTRY_VERIFY(peer.store.chatInfo().value("pinned").toBool());
+        QVERIFY(peer.store.setArchived(A,true));QTRY_VERIFY(peer.store.chatInfo().value("archived").toBool());
+        QCOMPARE(peer.store.chats().size(),2);peer.store.setArchiveView(true);QCOMPARE(peer.store.chats().size(),1);
+        QVERIFY(peer.store.setArchived(A,false));QTRY_VERIFY(!peer.store.chatInfo().value("archived").toBool());
+        QCOMPARE(peer.store.chats().size(),0);peer.store.setArchiveView(false);QCOMPARE(peer.store.chats().size(),3);
+    }
+    void recipientPagingIncludesArchiveWithoutSwitchingTheVisibleList() {
+        Peer peer;ready(peer);peer.store.setArchiveView(true);QVERIFY(peer.store.archiveView());
+        QVERIFY(peer.store.canLoadRecipientChats());peer.store.loadMoreRecipientChats();QTRY_VERIFY(!peer.store.loadingChats());
+        QVERIFY(peer.store.archiveView());peer.store.loadMoreRecipientChats();QTRY_VERIFY(!peer.store.loadingChats());
+        QCOMPARE(peer.store.chats().size(),1);QCOMPARE(peer.store.chats().first().toMap().value("chatId").toString(),QString("44"));
+        peer.store.loadMoreRecipientChats();QTRY_VERIFY(!peer.store.loadingChats());QVERIFY(!peer.store.canLoadRecipientChats());QVERIFY(peer.store.archiveView());
+    }
+    void incomingEventsAreDeduplicatedAndNeverRequestHistoryJump() {
+        Peer peer;ready(peer);open(peer);QSignalSpy incoming(&peer.store,SIGNAL(incomingMessage())),scroll(&peer.store,SIGNAL(scrollRequested()));
+        QVariantMap event=object("updateNewMessage"),message=object("message");message.insert("id",777);message.insert("chat_id",A.toLongLong());message.insert("is_outgoing",false);message.insert("content",content("new incoming"));event.insert("message",message);
+        update(peer,event);QCOMPARE(incoming.size(),1);QCOMPARE(scroll.size(),0);
+        update(peer,event);QCOMPARE(incoming.size(),1);QCOMPARE(scroll.size(),0);
+        peer.store.closeChat();update(peer,event);QCOMPARE(incoming.size(),1);
+    }
     void chatTabsSeparatePrivateAndCommunityWithoutLosingRows() {
         Peer peer;ready(peer);
         QCOMPARE(peer.store.personalCount(),1);QCOMPARE(peer.store.communityCount(),2);

@@ -9,3 +9,5 @@ HEADERS += ../src/TelegramSession.hpp ../src/TelegramStore.hpp ../src/JsonCodec.
 
 SOURCES += ../src/LocalOutbox.cpp
 HEADERS += ../src/LocalOutbox.hpp
+
+SOURCES += ../src/TelegramStoreActions.cpp

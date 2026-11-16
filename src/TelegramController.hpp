@@ -34,10 +34,25 @@ class TelegramController : public QObject {
     Q_PROPERTY(bool canSendSelected READ canSendSelected NOTIFY changed)
     Q_PROPERTY(bool hasFailedAttachment READ hasFailedAttachment NOTIFY changed)
     Q_PROPERTY(int chatCount READ chatCount NOTIFY changed)
+    Q_PROPERTY(int messageCount READ messageCount NOTIFY changed)
     Q_PROPERTY(int personalCount READ personalCount NOTIFY changed)
     Q_PROPERTY(int communityCount READ communityCount NOTIFY changed)
     Q_PROPERTY(int targetMessageIndex READ targetMessageIndex NOTIFY changed)
     Q_PROPERTY(QString targetMessageId READ targetMessageId NOTIFY changed)
+    Q_PROPERTY(bool archiveView READ archiveView NOTIFY changed)
+    Q_PROPERTY(QVariantMap composerContext READ composerContext NOTIFY changed)
+    Q_PROPERTY(QVariantMap forwardSelection READ forwardSelection NOTIFY changed)
+    Q_PROPERTY(QVariantMap chatInfo READ chatInfo NOTIFY changed)
+    Q_PROPERTY(bb::cascades::DataModel* infoRows READ infoRows CONSTANT)
+    Q_PROPERTY(bb::cascades::DataModel* recipients READ recipients CONSTANT)
+    Q_PROPERTY(bool infoLoading READ infoLoading NOTIFY changed)
+    Q_PROPERTY(bool canLoadInfo READ canLoadInfo NOTIFY changed)
+    Q_PROPERTY(QString infoError READ infoError NOTIFY changed)
+    Q_PROPERTY(int infoCount READ infoCount NOTIFY changed)
+    Q_PROPERTY(int incomingSerial READ incomingSerial NOTIFY changed)
+    Q_PROPERTY(int forwardSerial READ forwardSerial NOTIFY changed)
+    Q_PROPERTY(int recipientCount READ recipientCount NOTIFY changed)
+    Q_PROPERTY(bool canLoadRecipientChats READ canLoadRecipientChats NOTIFY changed)
 public:
     explicit TelegramController(TelegramStore *store, QObject *parent = 0);
     bb::cascades::DataModel *chats() const { return m_chats; }
@@ -56,6 +71,7 @@ public:
     bool canSend() const { return m_store->canSend(); }
     bool sendBusy() const { return m_store->sendBusy(); }
     int scrollSerial() const { return m_scrollSerial; }
+    int messageCount() const { return m_messages->size(); }
     int chatCount() const { return m_chats->size(); }
     int personalCount() const { return m_store->personalCount(); }
     int communityCount() const { return m_store->communityCount(); }
@@ -64,6 +80,33 @@ public:
     Q_INVOKABLE void setChatCategory(const QString &category) { m_store->setChatCategory(category); }
     Q_INVOKABLE bool openChatAt(const QString &id, const QString &messageId) { leaveAttachment(); return m_store->openChatAt(id,messageId); }
     Q_INVOKABLE bool latestMessages() { return openChat(m_store->currentChatId()); }
+    bool archiveView() const { return m_store->archiveView(); }
+    Q_INVOKABLE void setArchiveView(bool value) { m_store->setArchiveView(value); }
+    Q_INVOKABLE bool setPinned(const QString &id,bool value) { return m_store->setPinned(id,value); }
+    Q_INVOKABLE bool setArchived(const QString &id,bool value) { return m_store->setArchived(id,value); }
+    QVariantMap composerContext() const { return m_store->composerContext(); }
+    QVariantMap forwardSelection() const { return m_store->forwardSelection(); }
+    QVariantMap chatInfo() const { return m_store->chatInfo(); }
+    bb::cascades::DataModel *infoRows() const { return m_infoRows; }
+    bb::cascades::DataModel *recipients() const { return m_recipients; }
+    bool infoLoading() const { return m_store->infoLoading(); }
+    bool canLoadInfo() const { return m_store->canLoadInfo(); }
+    QString infoError() const { return m_store->infoError(); }
+    int infoCount() const { return m_infoRows->size(); }
+    int incomingSerial() const { return m_incomingSerial; }
+    int forwardSerial() const { return m_forwardSerial; }
+    int recipientCount() const { return m_recipients->size(); }
+    bool canLoadRecipientChats() const { return m_store->canLoadRecipientChats(); }
+    Q_INVOKABLE void loadMoreRecipientChats() { m_store->loadMoreRecipientChats(); }
+    Q_INVOKABLE bool beginMessageAction(const QString &id,const QString &action);
+    Q_INVOKABLE void cancelComposer() { m_store->cancelComposer(); }
+    Q_INVOKABLE bool forwardTo(const QString &id) { return m_store->forwardTo(id); }
+    Q_INVOKABLE void loadChatInfo() { m_store->loadChatInfo(); }
+    Q_INVOKABLE void setInfoSection(int section) { m_store->setInfoSection(section); }
+    Q_INVOKABLE void loadMoreInfo() { m_store->loadMoreInfo(); }
+    Q_INVOKABLE bool setNotifications(bool value) { return m_store->setNotifications(value); }
+    Q_INVOKABLE void refreshRecipients();
+    Q_INVOKABLE void setRecipientQuery(const QString &query) { const QString next=query.trimmed().left(128);if(next==m_recipientQuery)return;m_recipientQuery=next;refreshRecipients(); }
     Q_INVOKABLE bool openChat(const QString &id) { leaveAttachment(); return m_store->openChat(id); }
     Q_INVOKABLE void closeChat() { leaveAttachment(); m_store->closeChat(); }
     Q_INVOKABLE bool sendText(const QString &text) { return m_store->sendText(text); }
@@ -96,6 +139,10 @@ signals:
     void changed();
 private slots:
     void updateChats();
+    void updateInfoRows();
+    void incoming();
+    void forwardReady();
+    void updateRecipientRows() { refreshRecipients(); }
     void updateMessages();
     void scroll();
     void fileSelected(const QStringList &files);
@@ -108,12 +155,14 @@ private:
     QString newUploadPath(const QString &name);
     TelegramStore *m_store;
     bb::cascades::ArrayDataModel *m_chats, *m_messages;
-    int m_scrollSerial;
+    bb::cascades::ArrayDataModel *m_infoRows, *m_recipients;
+    int m_scrollSerial, m_incomingSerial, m_forwardSerial;
     bb::system::InvokeManager m_invoke;
     bb::cascades::pickers::FilePicker m_picker;
     bb::multimedia::AudioRecorder m_recorder;
     QTimer m_recordLimit;
     QVariantMap m_attachment;
+    QString m_recipientQuery;
     QString m_attachmentChat, m_pickerChat, m_pickerKind, m_mediaError;
     bool m_recording;
 

@@ -37,9 +37,11 @@ bool LocalOutbox::open()
         const QVariantMap item = it.value().toMap();
         if (!QRegExp("[a-f0-9]{32}").exactMatch(it.key()) || !identifier(item.value("accountId").toString()) ||
             !identifier(item.value("chatId").toString()) || !states.contains(item.value("state").toString()) ||
-            (item.value("type") != "text" && item.value("type") != "attachment") ||
+            (item.value("type") != "text" && item.value("type") != "attachment" && item.value("type")!="edit" && item.value("type")!="forward") ||
             item.value("text").toString().size() > 4096 || item.value("caption").toString().size() > 1024 ||
-            (item.value("type") == "attachment" && !relativePath(item.value("relativePath").toString()))) {
+            (item.value("type") == "attachment" && !relativePath(item.value("relativePath").toString())) ||
+            ((item.value("type")=="edit" || item.value("type")=="forward") && !identifier(item.value("sourceMessageId").toString())) ||
+            (item.value("type")=="forward" && !identifier(item.value("sourceChatId").toString()))) {
             m_error = QString::fromUtf8("Некорректный журнал отправки. Очистка остановлена."); return false;
         }
     }

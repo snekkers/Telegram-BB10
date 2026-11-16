@@ -27,6 +27,13 @@ CustomListItem {
                     textStyle.fontWeight: (item.row.unreadLabel || "").length > 0 ? FontWeight.W600 : FontWeight.W400
                     layoutProperties: StackLayoutProperties { spaceQuota: 1 }
                 }
+                ImageView {
+                    visible: item.row.pinned === true
+                    imageSource: "asset:///icons/pin-blue.png"
+                    preferredWidth: ui.du(2.5); preferredHeight: ui.du(2.5)
+                    verticalAlignment: VerticalAlignment.Center
+                    accessibility.name: qsTr("Закреплённый чат")
+                }
                 Label {
                     text: item.row.time || ""
                     textFormat: TextFormat.Plain

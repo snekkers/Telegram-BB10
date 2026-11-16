@@ -13,3 +13,7 @@ SOURCES += ../src/LocalOutbox.cpp
 HEADERS += ../src/LocalOutbox.hpp
 SOURCES += ../src/TelegramSearch.cpp
 HEADERS += ../src/TelegramSearch.hpp
+
+SOURCES += ../src/AutoPager.cpp
+HEADERS += ../src/AutoPager.hpp
+SOURCES += ../src/TelegramStoreActions.cpp

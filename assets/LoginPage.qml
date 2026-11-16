@@ -149,7 +149,7 @@ Page {
             Button { text: loginPage.showDetails ? qsTr("Скрыть сведения") : qsTr("Сведения о подключении"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: loginPage.showDetails = !loginPage.showDetails }
             Container {
                 visible: loginPage.showDetails
-                Label { text: "Berrygram 0.9.0" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(Ui.secondary); multiline: true }
+                Label { text: "Berrygram 0.10.0" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(Ui.secondary); multiline: true }
                 Label { text: qsTr("Сессия хранится на устройстве. Отключение сохраняет вход в аккаунт."); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(Ui.secondary); multiline: true }
             }
         }

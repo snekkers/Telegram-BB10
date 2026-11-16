@@ -122,12 +122,12 @@ void TelegramSearch::rebuild() {
                 row.insert("key",id+":"+row.value("messageId").toString());row.insert("preview",messageText(message).left(240));
                 row.insert("time",QDateTime::fromTime_t(message.value("date").toUInt()).toString("dd.MM.yy"));
                 if(row.value("title").toString().isEmpty())row.insert("title",QString::fromUtf8("Чат"));
-                row.insert("unreadLabel",QString());row.remove("mainOrder");rows.append(row);
+                row.insert("unreadLabel",QString());row.remove("mainOrder");row.remove("archiveOrder");rows.append(row);
             }
         } else foreach(const QString &id,m_ids) {
             QVariantMap row=m_store->chat(id);if(row.isEmpty())continue;
             row.insert("key",id);row.insert("messageId",QString());row.insert("preview",typeLabel(row));row.insert("time",QString());
-            row.insert("unreadLabel",QString());row.remove("mainOrder");rows.append(row);
+            row.insert("unreadLabel",QString());row.remove("mainOrder");row.remove("archiveOrder");rows.append(row);
         }
     }
     if(rows!=m_rows) { m_rows=rows;emit changed(); }

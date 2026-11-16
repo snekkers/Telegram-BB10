@@ -1,4 +1,5 @@
 import bb.cascades 1.3
+import Berrygram 1.0
 import "Ui.js" as Ui
 
 NavigationPane {
@@ -7,6 +8,21 @@ NavigationPane {
     property bool demo: false
     property string chatCategory: "personal"
     function applyCategory() { _live.setChatCategory(chatCategory); _chat.setChatCategory(chatCategory); }
+    property bool archiveView: false
+    function setArchive(value) { archiveView=value; _live.setArchiveView(value); _chat.setArchiveView(value); }
+    function openChatInfo(isLive) {
+        var source=isLive?_live:_chat; source.loadChatInfo();
+        var page=infoPageDefinition.createObject();
+        if(page) {
+            page.liveChat=isLive;
+            page.openMessage.connect(function(chatId,messageId) { navigation.pop(); source.openChatAt(chatId,messageId); });
+            navigation.push(page);
+        }
+    }
+    function openForward(isLive) {
+        var source=isLive?_live:_chat;source.setRecipientQuery("");
+        var page=forwardPageDefinition.createObject();if(page){page.liveChat=isLive;navigation.push(page);}
+    }
     onCreationCompleted: applyCategory()
     function openSearch() {
         if (!live && !demo) return;
@@ -34,19 +50,20 @@ NavigationPane {
         objectName: "chatsPage"
         actionBarVisibility: ChromeVisibility.Hidden
         titleBar: AppHeader {
-            caption: navigation.live || navigation.demo ? qsTr("Чаты") : "Berrygram"
+            caption: navigation.live || navigation.demo ? (navigation.archiveView?qsTr("Архив"):qsTr("Чаты")) : "Berrygram"
             detail: navigation.live ? _live.connectionStatus : navigation.demo ? qsTr("Демо · без подключения") : qsTr("Telegram для BlackBerry Classic")
             compact: navigation.live || navigation.demo
             menuVisible: navigation.live || navigation.demo
             onMenuRequested: _ui.openMenu(chatsPage)
         }
         shortcuts: [
-            SystemShortcut { type: SystemShortcuts.Search; enabled: navigation.live || navigation.demo; onTriggered: navigation.openSearch() },
-            Shortcut { key: "s"; enabled: navigation.live || navigation.demo; onTriggered: navigation.openSearch() },
+            SystemShortcut { type: SystemShortcuts.Search; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
+            Shortcut { key: "s"; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
             Shortcut { key: "u"; enabled: navigation.live; onTriggered: navigation.openChatById(_live.nextUnreadChat()) }
         ]
         actions: [
-            ActionItem { title: qsTr("Поиск"); imageSource: "asset:///icons/search-white.png"; enabled: navigation.live || navigation.demo; onTriggered: navigation.openSearch() },
+            ActionItem { objectName: "globalSearchAction"; title: qsTr("Поиск"); imageSource: "asset:///icons/search-white.png"; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
+            ActionItem { objectName: "archiveAction"; title: navigation.archiveView?qsTr("К чатам"):qsTr("Архив"); imageSource: "asset:///icons/archive-white.png"; enabled: navigation.live || navigation.demo; onTriggered: navigation.setArchive(!navigation.archiveView) },
             ActionItem { title: navigation.live ? qsTr("Подключение") : qsTr("Войти в Telegram"); imageSource: "asset:///icons/settings-white.png"; onTriggered: navigation.openLogin() },
             ActionItem { title: qsTr("Выйти из демо"); enabled: navigation.demo && !navigation.live; onTriggered: navigation.demo = false }
         ]
@@ -75,12 +92,6 @@ NavigationPane {
                 layoutProperties: StackLayoutProperties { spaceQuota: 1 }
                 Container {
                     leftPadding: ui.du(1.6); rightPadding: ui.du(1.6); topPadding: ui.du(1); bottomPadding: ui.du(0.5)
-                    Button {
-                        objectName: "globalSearchButton"
-                        text: qsTr("Поиск людей, чатов и сообщений")
-                        horizontalAlignment: HorizontalAlignment.Fill
-                        onClicked: navigation.openSearch()
-                    }
                     SegmentedControl {
                         objectName: "chatTabs"
                         horizontalAlignment: HorizontalAlignment.Fill
@@ -95,8 +106,29 @@ NavigationPane {
                     objectName: "chatList"
                     dataModel: navigation.live ? _live.chats : _chat.chats
                     layoutProperties: StackLayoutProperties { spaceQuota: 1 }
+                    stickToEdgePolicy: ListViewStickToEdgePolicy.Beginning
+                    attachedObjects: [
+                        ListScrollStateHandler { id: chatScroll; objectName: "chatScroll" },
+                        AutoPager {
+                            objectName: "chatPager"
+                            enabled: navigation.live && navigation.top === chatsPage && _live.canLoadChats && _live.errorText.length === 0
+                            atEdge: chatScroll.atEnd || _live.chatCount === 0
+                            contentCount: _live.chatCount
+                            onRequestMore: _live.loadMoreChats()
+                        }
+                    ]
                     function itemType(data, indexPath) { return "chat"; }
-                    listItemComponents: [ ListItemComponent { type: "chat"; ChatRow { row: ListItemData } } ]
+                    function pinChat(id,value) { (navigation.live?_live:_chat).setPinned(id,value); }
+                    function archiveChat(id,value) { (navigation.live?_live:_chat).setArchived(id,value); }
+                    listItemComponents: [ ListItemComponent { type: "chat"; ChatRow {
+                        id: chatItem
+                        row: ListItemData
+                        contextActions: [ ActionSet {
+                            title: ListItemData.title
+                            ActionItem { title: ListItemData.pinned?qsTr("Открепить"):qsTr("Закрепить"); imageSource: "asset:///icons/pin-white.png"; onTriggered: chatItem.ListItem.view.pinChat(ListItemData.chatId,!ListItemData.pinned) }
+                            ActionItem { title: ListItemData.archived?qsTr("Из архива"):qsTr("В архив"); imageSource: "asset:///icons/archive-white.png"; onTriggered: chatItem.ListItem.view.archiveChat(ListItemData.chatId,!ListItemData.archived) }
+                        } ]
+                    } } ]
                     onTriggered: navigation.openChatById(dataModel.data(indexPath).chatId)
                 }
                 Label {
@@ -104,17 +136,19 @@ NavigationPane {
                     text: navigation.chatCategory === "personal" ? qsTr("Пока нет личных чатов") : qsTr("Пока нет групп и каналов")
                     textStyle.color: Color.create(Ui.secondary); horizontalAlignment: HorizontalAlignment.Center
                 }
-                Button { visible: navigation.live && _live.canLoadChats; text: _live.loadingChats ? qsTr("Загрузка…") : qsTr("Загрузить ещё"); enabled: !_live.loadingChats; horizontalAlignment: HorizontalAlignment.Fill; onClicked: _live.loadMoreChats() }
+                Label { visible: navigation.live && _live.loadingChats; text: qsTr("Загрузка…"); textStyle.color: Color.create(Ui.secondary); horizontalAlignment: HorizontalAlignment.Center }
+                Button { visible: navigation.live && _live.errorText.length > 0 && _live.canLoadChats; text: qsTr("Повторить загрузку"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: _live.loadMoreChats() }
             }
         }
     }
-    attachedObjects: [ ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" } ]
+    attachedObjects: [ ComponentDefinition { id: chatPageDefinition; source: "ChatPage.qml" }, ComponentDefinition { id: loginPageDefinition; source: "LoginPage.qml" }, ComponentDefinition { id: searchPageDefinition; source: "SearchPage.qml" }, ComponentDefinition { id: infoPageDefinition; source: "ChatInfoPage.qml" }, ComponentDefinition { id: forwardPageDefinition; source: "ForwardPage.qml" } ]
     onPushTransitionEnded: {
         if ((page.objectName === "chatPage" || page.objectName === "searchPage") && page.focusComposer !== undefined) page.focusComposer();
     }
     onPopTransitionEnded: {
         if (page.objectName === "chatPage") { if (page.liveChat) _live.closeChat(); else _chat.closeChat(); }
         if (page.objectName === "searchPage") _search.cancel();
+        if (page.objectName === "forwardPage") (page.liveChat?_live:_chat).setRecipientQuery("");
         page.destroy();
     }
 }

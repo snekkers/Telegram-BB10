@@ -3,6 +3,9 @@
 #include "TelegramController.hpp"
 #include "SearchController.hpp"
 #include "PrivateFile.hpp"
+#include "AutoPager.hpp"
+#include <bb/cascades/ActionItem>
+#include <bb/cascades/ListScrollStateHandler>
 #include <bb/cascades/AbstractPane>
 #include <bb/cascades/AbstractTextControl>
 #include <bb/cascades/Application>
@@ -32,8 +35,9 @@ using namespace bb::cascades;
 
 UiTools::UiTools(ChatController *demo, TelegramController *live, SearchController *search, QObject *parent)
     : QObject(parent), m_demo(demo), m_live(live), m_search(search),
-      m_directory(QDir::currentPath()+"/data/ui-check"), m_checks(false), m_pending(false)
+      m_directory(QDir::currentPath()+"/data/ui-check"), m_checks(false), m_pending(false),m_lastSubmitMs(-1000)
 {
+    m_submitClock.start();
 #ifdef BERRYGRAM_UI_CHECKS
     m_checks = QFile::exists(m_directory+"/enabled");
     if (m_checks) {
@@ -51,6 +55,11 @@ void UiTools::copyText(const QString &text) {
     if(text.isEmpty())return;
     bb::system::Clipboard clipboard;
     clipboard.clear();clipboard.insert("text/plain",text.toUtf8());
+}
+bool UiTools::acceptSubmit(QObject *page) {
+    const qlonglong now=m_submitClock.elapsed();
+    if(!page || (m_submitPage==page && now-m_lastSubmitMs<250))return false;
+    m_submitPage=page;m_lastSubmitMs=now;return true;
 }
 
 void UiTools::checkRequest()
@@ -77,8 +86,14 @@ void UiTools::checkRequest()
             if(tabs){tabs->setSelectedIndex(request.value("index").toInt()==1?1:0);ok=true;}
         } else if(action=="search" && navigation->count()==1) {
             navigation->setProperty("demo",true);
-            Button *button=navigation->top()->findChild<Button*>("globalSearchButton");
+            ActionItem *item=navigation->top()->findChild<ActionItem*>("globalSearchAction");
+            ok=item && QMetaObject::invokeMethod(item,"triggered");
+        } else if(action=="main-menu" && navigation->count()==1) {
+            ImageButton *button=navigation->top()->titleBar()->findChild<ImageButton*>("chatMenuButton");
             ok=button && QMetaObject::invokeMethod(button,"clicked");
+        } else if(action=="archive-view" && navigation->count()==1) {
+            ActionItem *item=navigation->top()->findChild<ActionItem*>("archiveAction");
+            ok=item && QMetaObject::invokeMethod(item,"triggered");
         } else if (action=="demo-chat" && navigation->count()==1) {
             navigation->setProperty("demo",true);
             const QString id=request.value("group").toBool()?"demo-project":"demo-anna";
@@ -99,7 +114,30 @@ void UiTools::checkRequest()
         } else if(navigation->top() && navigation->count()>1) {
             Page *page=navigation->top();
             TextArea *field=page->findChild<TextArea*>("messageField");
-            if(page->objectName()=="searchPage") {
+            if(action=="scroll-top" || action=="scroll-bottom") {
+                ListView *list=page->findChild<ListView*>(page->objectName()=="searchPage"?"searchResults":"messageList");
+                if(list){list->scrollToPosition(action=="scroll-top"?ScrollPosition::Beginning:ScrollPosition::End,ScrollAnimation::None);ok=true;}
+            } else if(action=="incoming") {
+                ok=m_demo->injectIncomingDemo();
+            } else if(page->objectName()=="chatInfoPage") {
+                if(action=="info-tab") {
+                    SegmentedControl *tabs=page->findChild<SegmentedControl*>("infoTabs");
+                    if(tabs){tabs->setSelectedIndex(qBound(0,request.value("index").toInt(),3));ok=true;}
+                } else {
+                    const QString name=action=="notifications"?"notificationsButton":action=="pin"?"pinChatButton":action=="archive"?"archiveChatButton":"";
+                    Button *button=page->findChild<Button*>(name);ok=button && QMetaObject::invokeMethod(button,"clicked");
+                }
+            } else if(page->objectName()=="forwardPage") {
+                if(action=="recipient-query") {
+                    TextField *query=page->findChild<TextField*>("recipientSearch");
+                    if(query){query->setText(request.value("text").toString().left(128));ok=true;}
+                } else if(action=="forward-recipient") {
+                    ListView *list=page->findChild<ListView*>("recipientList");
+                    ok=list && QMetaObject::invokeMethod(list,"triggered",Q_ARG(QVariantList,QVariantList()<<qBound(0,request.value("index").toInt(),4)));
+                } else if(action=="forward-confirm") {
+                    Button *button=page->findChild<Button*>("forwardConfirmButton");ok=button && button->isEnabled() && QMetaObject::invokeMethod(button,"clicked");
+                }
+            } else if(page->objectName()=="searchPage") {
                 TextField *query=page->findChild<TextField*>("searchQuery");
                 if(action=="search-query" && query) {query->setText(request.value("text").toString().left(256));ok=true;}
                 else if(action=="search-mode" || action=="search-filter") {
@@ -110,12 +148,26 @@ void UiTools::checkRequest()
                     ListView *list=page->findChild<ListView*>("searchResults");
                     ok=list && QMetaObject::invokeMethod(list,"triggered",Q_ARG(QVariantList,QVariantList()<<0));
                 }
+            } else if(action=="reply" || action=="edit" || action=="forward") {
+                const QString id=request.value("message_id").toString();
+                if(QRegExp("[0-9]{1,10}").exactMatch(id)) {
+                    ActionItem *item=page->findChild<ActionItem*>(action+"Action-"+id);
+                    ok=item && item->isEnabled() && QMetaObject::invokeMethod(item,"triggered");
+                }
+            } else if(action=="chat-info") {
+                ActionItem *item=page->findChild<ActionItem*>("chatInfoAction");ok=item && QMetaObject::invokeMethod(item,"triggered");
+            } else if(action=="new-messages") {
+                Button *button=page->findChild<Button*>("newMessagesButton");ok=button && QMetaObject::invokeMethod(button,"clicked");
+            } else if(action=="cancel-composer") {
+                Button *button=page->findChild<Button*>("cancelComposerButton");ok=button && QMetaObject::invokeMethod(button,"clicked");
             } else if(action=="compose" && field) {
                 field->setText(request.value("text").toString().left(4096));
                 field->editor()->setCursorPosition(field->text().size());field->requestFocus();ok=true;
-            } else if((action=="send" || action=="newline") && field) {
+            } else if((action=="send" || action=="newline" || action=="double-send") && field) {
                 Shortcut *shortcut=field->findChild<Shortcut*>(action=="send"?"sendShortcut":"newlineShortcut");
+                if(action=="double-send")shortcut=field->findChild<Shortcut*>("sendShortcut");
                 ok=shortcut && QMetaObject::invokeMethod(shortcut,"triggered");
+                if(ok && action=="double-send")QMetaObject::invokeMethod(shortcut,"triggered");
             } else if(action=="send-button" && field) {
                 ImageButton *button=page->findChild<ImageButton*>("sendButton");
                 ok=button && button->isEnabled() && QMetaObject::invokeMethod(button,"clicked");
@@ -139,6 +191,7 @@ void UiTools::finishCheck()
     const bool demoPage=navigation && navigation->top() && !m_live->ready() &&
         navigation->property("demo").toBool() && (navigation->count()==1 ||
         navigation->top()->objectName()=="searchPage" ||
+        navigation->top()->objectName()=="chatInfoPage" || navigation->top()->objectName()=="forwardPage" ||
         (navigation->top()->objectName()=="chatPage" && !navigation->top()->property("liveChat").toBool()));
     if(demoPage) {
         Page *page=navigation->top();
@@ -162,10 +215,25 @@ void UiTools::finishCheck()
         if(send)m_result.insert("send_enabled",send->property("enabled"));
         m_result.insert("message_count",m_demo->messages()->childCount(QVariantList()));
         m_result.insert("chat_count",m_demo->chatCount());
+        QVariantList chatRows;
+        for(int i=0;i<m_demo->chatCount();++i)chatRows.append(m_demo->chats()->data(QVariantList()<<i));
+        m_result.insert("chat_rows",chatRows);
         m_result.insert("category",navigation->property("chatCategory"));
         m_result.insert("search_count",m_search->count());
         m_result.insert("target_index",m_demo->targetMessageIndex());
         m_result.insert("target_message",m_demo->targetMessageId());
+        m_result.insert("composer_mode",m_demo->composerContext().value("mode"));
+        m_result.insert("forward_state",m_demo->forwardSelection().value("state"));
+        m_result.insert("info",m_demo->chatInfo());
+        m_result.insert("info_count",m_demo->infoCount());
+        m_result.insert("pending_new_count",page->property("pendingNewCount"));
+        m_result.insert("persistent_search_button",page->findChild<QObject*>("globalSearchButton")!=0);
+        ListScrollStateHandler *history=page->findChild<ListScrollStateHandler*>("historyScroll");
+        if(history){m_result.insert("history_at_end",history->isAtEnd());m_result.insert("first_visible",history->firstVisibleItem());}
+        QVariantList visibleMessages;
+        for(int i=0;i<m_demo->messages()->childCount(QVariantList());++i)visibleMessages.append(m_demo->messages()->data(QVariantList()<<i));
+        m_result.insert("demo_messages",visibleMessages);
+        if(page->objectName()=="searchPage")m_result.insert("can_load_search",m_search->canLoadMore());
         TextField *query=page->findChild<TextField*>("searchQuery");
         if(query)m_result.insert("query",query->text());
         if(page->objectName()=="searchPage") {

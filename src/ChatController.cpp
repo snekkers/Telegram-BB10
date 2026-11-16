@@ -4,6 +4,7 @@
 #include <bb/cascades/ItemGrouping>
 #include <QDateTime>
 #include <QStringList>
+#include <algorithm>
 
 namespace {
 
@@ -16,6 +17,7 @@ QVariantMap message(const QString &author, const QString &text, bool outgoing, i
     row.insert("outgoing", outgoing);
     row.insert("order", order);
     row.insert("date", date.toTime_t());
+    row.insert("textMessage",true);
     row.insert("messageId", QString::number(order + 1));
     row.insert("time", date.toString("HH:mm"));
     return row;
@@ -26,10 +28,13 @@ QVariantMap message(const QString &author, const QString &text, bool outgoing, i
 ChatController::ChatController(QObject *parent)
     : QObject(parent)
     , m_chats(new bb::cascades::GroupDataModel(QStringList() << "order", this))
-    , m_messages(new bb::cascades::GroupDataModel(QStringList() << "order", this))
+    , m_messages(new bb::cascades::ArrayDataModel(this))
+    , m_infoRows(new bb::cascades::ArrayDataModel(this))
+    , m_recipients(new bb::cascades::GroupDataModel(QStringList() << "order",this))
+    , m_archiveView(false),m_infoSection(0),m_incomingSerial(0),m_forwardSerial(0)
 {
     m_chats->setGrouping(bb::cascades::ItemGrouping::None);
-    m_messages->setGrouping(bb::cascades::ItemGrouping::None);
+    m_recipients->setGrouping(bb::cascades::ItemGrouping::None);
     addDemoChat("demo-saved", QString::fromUtf8("Избранное"),
                 QString::fromUtf8("Заметки, ссылки и всё важное"), 0);
     addDemoChat("demo-anna", QString::fromUtf8("Анна"),
@@ -70,6 +75,7 @@ void ChatController::addDemoChat(const QString &id, const QString &title,
     row.insert("order", order);
     row.insert("time", QDateTime::currentDateTime().toString("HH:mm"));
     row.insert("unreadLabel", order == 1 ? QString("2") : QString());
+    row.insert("pinned",false);row.insert("archived",false);
     row.insert("personal", id == "demo-saved" || id == "demo-anna");
     m_chatRows.append(row);
 
@@ -88,23 +94,31 @@ void ChatController::addDemoChat(const QString &id, const QString &title,
 
 void ChatController::refreshChats()
 {
-    m_chats->clear();
+    m_chats->clear();m_recipients->clear();
     for (int i = 0; i < m_chatRows.size(); ++i) {
         const QVariantMap row=m_chatRows.at(i).toMap();
-        if(m_category.isEmpty() || row.value("personal").toBool()==(m_category=="personal")) m_chats->insert(row);
+        if(m_recipientQuery.isEmpty() || row.value("title").toString().contains(m_recipientQuery,Qt::CaseInsensitive)) {
+            QVariantMap recipient=row;recipient.insert("time",QString());recipient.insert("unreadLabel",QString());m_recipients->insert(recipient);
+        }
+        if(row.value("archived").toBool()==m_archiveView && (m_category.isEmpty() || row.value("personal").toBool()==(m_category=="personal"))) {
+            QVariantMap sorted=row;sorted.insert("order",row.value("pinned").toBool()?row.value("order").toInt()-100:row.value("order").toInt());m_chats->insert(sorted);
+        }
     }
     emit currentChatChanged();
 }
 
 void ChatController::refreshMessages()
 {
-    m_messages->clear();
     QVariantList rows = MessagePresentation::decorate(m_history.value(m_currentChatId),
         m_currentChatId == "demo-project" || m_currentChatId == "demo-bb10",
         "2", m_currentChatId == "demo-anna");
     for (int i = 0; i < rows.size(); ++i) {
-        QVariantMap row=rows.at(i).toMap();row.insert("searchTarget",row.value("messageId").toString()==m_targetMessage && !m_targetMessage.isEmpty());m_messages->insert(row);
+        QVariantMap row=rows.at(i).toMap();row.insert("searchTarget",row.value("messageId").toString()==m_targetMessage && !m_targetMessage.isEmpty());
+        if(i>=m_messages->size())m_messages->append(QVariant(row));
+        else if(m_messages->value(i).toMap().value("messageId")!=row.value("messageId"))m_messages->insert(i,QVariant(row));
+        else if(m_messages->value(i).toMap()!=row)m_messages->replace(i,QVariant(row));
     }
+    while(m_messages->size()>rows.size())m_messages->removeAt(m_messages->size()-1);
 }
 
 bool ChatController::openChat(const QString &chatId)
@@ -118,6 +132,7 @@ bool ChatController::openChatAt(const QString &chatId,const QString &messageId)
         return false;
     }
 
+    m_context.clear();m_forward.clear();
     m_currentChatId = chatId;
     m_targetMessage = messageId;
     for (int i = 0; i < m_chatRows.size(); ++i) {
@@ -135,6 +150,7 @@ bool ChatController::openChatAt(const QString &chatId,const QString &messageId)
 
 void ChatController::closeChat()
 {
+    m_context.clear();m_forward.clear();
     m_currentChatId.clear();
     m_targetMessage.clear();
     m_currentChatTitle.clear();
@@ -150,9 +166,19 @@ bool ChatController::sendDemoMessage(const QString &text)
     }
 
     QVariantList &history = m_history[m_currentChatId];
-    const QVariantMap row = message(QString::fromUtf8("Вы · локально"), body,
+    if(m_context.value("mode")=="edit") {
+        for(int i=0;i<history.size();++i) {
+            QVariantMap row=history.at(i).toMap();
+            if(row.value("messageId")==m_context.value("messageId")){row.insert("text",body);row.insert("edited",true);history[i]=row;break;}
+        }
+        if(!history.isEmpty() && history.last().toMap().value("messageId")==m_context.value("messageId"))
+            for(int i=0;i<m_chatRows.size();++i){QVariantMap chat=m_chatRows.at(i).toMap();if(chat.value("chatId")==m_currentChatId){chat.insert("preview",body);m_chatRows[i]=chat;break;}}
+        m_context.clear();refreshMessages();refreshChats();return true;
+    }
+    QVariantMap row = message(QString::fromUtf8("Вы · локально"), body,
                                    true, history.size());
-    history.append(row);
+    if(m_context.value("mode")=="reply"){row.insert("replyQuote",m_context.value("preview"));row.insert("replyMessageId",m_context.value("messageId"));}
+    m_context.clear();history.append(row);
     refreshMessages();
 
     for (int i = 0; i < m_chatRows.size(); ++i) {
@@ -170,7 +196,7 @@ bool ChatController::sendDemoMessage(const QString &text)
 void ChatController::setChatCategory(const QString &category) { m_category=category;refreshChats(); }
 int ChatController::chatCount() const { return m_chats->childCount(QVariantList()); }
 int ChatController::personalCount() const {
-    int count=0;foreach(const QVariant &value,m_chatRows)if(value.toMap().value("personal").toBool())++count;return count;
+    int count=0;foreach(const QVariant &value,m_chatRows)if(value.toMap().value("personal").toBool() && value.toMap().value("archived").toBool()==m_archiveView)++count;return count;
 }
 int ChatController::targetMessageIndex() const {
     const QVariantList rows=m_history.value(m_currentChatId);

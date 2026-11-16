@@ -12,8 +12,12 @@
 
 TelegramController::TelegramController(TelegramStore *store, QObject *parent)
     : QObject(parent), m_store(store), m_chats(new bb::cascades::ArrayDataModel(this)),
-      m_messages(new bb::cascades::ArrayDataModel(this)), m_scrollSerial(0), m_recording(false)
+      m_messages(new bb::cascades::ArrayDataModel(this)), m_infoRows(new bb::cascades::ArrayDataModel(this)), m_recipients(new bb::cascades::ArrayDataModel(this)), m_scrollSerial(0), m_incomingSerial(0), m_forwardSerial(0), m_recording(false)
 {
+    connect(store,SIGNAL(infoChanged()),this,SLOT(updateInfoRows()));
+    connect(store,SIGNAL(incomingMessage()),this,SLOT(incoming()));
+    connect(store,SIGNAL(forwardReady()),this,SLOT(forwardReady()));
+    connect(store,SIGNAL(recipientChatsChanged()),this,SLOT(updateRecipientRows()));
     connect(store, SIGNAL(chatsChanged()), this, SLOT(updateChats()));
     connect(store, SIGNAL(messagesChanged()), this, SLOT(updateMessages()));
     connect(store, SIGNAL(changed()), this, SIGNAL(changed()));
@@ -207,4 +211,24 @@ bool TelegramController::previewAttachment()
     request.setUri(QUrl::fromLocalFile(m_attachment.value("path").toString()));
     request.setFileTransferMode(bb::system::FileTransferMode::CopyReadOnly);
     return m_invoke.invoke(request) != 0;
+}
+
+void TelegramController::updateInfoRows(){reconcile(m_infoRows,m_store->infoRows(),"key");emit changed();}
+void TelegramController::incoming(){++m_incomingSerial;emit changed();}
+void TelegramController::forwardReady(){++m_forwardSerial;emit changed();}
+void TelegramController::refreshRecipients(){
+    const int previous=m_recipients->size();
+    QVariantList rows;
+    foreach(const QVariant &value,m_store->knownChats()) {
+        QVariantMap row=value.toMap();
+        if(!row.value("canSend").toBool() || row.value("topics").toBool() || row.value("type")=="chatTypeSecret")continue;
+        if(!m_recipientQuery.isEmpty() && !row.value("title").toString().contains(m_recipientQuery,Qt::CaseInsensitive))continue;
+        row.remove("mainOrder");row.remove("archiveOrder");row.insert("time",QString());row.insert("unreadLabel",QString());rows.append(row);
+    }
+    reconcile(m_recipients,rows,"chatId");
+    if(previous!=m_recipients->size())emit changed();
+}
+bool TelegramController::beginMessageAction(const QString &id,const QString &action){
+    if(m_recording || !m_attachment.isEmpty()) {m_mediaError=QString::fromUtf8("Сначала уберите подготовленное вложение или закончите запись.");emit changed();return false;}
+    return m_store->beginMessageAction(id,action);
 }
