@@ -18,7 +18,7 @@ with zipfile.ZipFile(bar) as archive:
     fields=dict(line.split(': ',1) for line in manifest.splitlines() if ': ' in line)
     assert fields['Package-Name']=='org.example.berrygram'
     assert fields['Package-Architecture']=='armle-v7'
-    assert fields['Package-Version']=='0.14.0.17'
+    assert fields['Package-Version']=='0.14.0.18'
     app_id=fields['Package-Name']+'.'+fields['Package-Id']
     expected={name:hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist()
         if name.startswith('native/') and not name.endswith('/')}
@@ -88,5 +88,5 @@ try:
             'qa_directory':qa,'uid':uid,'gid':gid,'installed_files':expected,'bar_sha256':digest,
             'data_preserved':True,'telegram_login_tested':False}
         (WORK/'installation.json').write_text(json.dumps(report,indent=2)+'\n')
-    print('Installed Berrygram',fields['Package-Version'],'and verified',len(expected),'native files; app data preserved')
+    print('Installed Telegram',fields['Package-Version'],'and verified',len(expected),'native files; app data preserved')
 finally:client.close()

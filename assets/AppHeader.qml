@@ -3,7 +3,7 @@ import "Ui.js" as Ui
 
 TitleBar {
     id: header
-    property string caption: "Berrygram"
+    property string caption: "Telegram"
     property string detail: ""
     property bool compact: false
     property bool menuVisible: false

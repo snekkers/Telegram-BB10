@@ -6,6 +6,8 @@ NavigationPane {
     id: navigation
     property bool live: _live.ready
     property bool demo: false
+    property string authPhase: _telegram.phase
+    property bool autoConfigAttempted: false
     property string chatCategory: "personal"
     function applyCategory() { _live.setChatCategory(chatCategory); _chat.setChatCategory(chatCategory); }
     property bool archiveView: false
@@ -23,7 +25,24 @@ NavigationPane {
         var source=isLive?_live:_chat;source.setRecipientQuery("");
         var page=forwardPageDefinition.createObject();if(page){page.liveChat=isLive;navigation.push(page);}
     }
-    onCreationCompleted: applyCategory()
+    onCreationCompleted: {
+        applyCategory()
+        if(_telegram.available && _telegram.phase==="stopped")_telegram.start()
+        else applyAuthorization()
+    }
+    onAuthPhaseChanged: applyAuthorization()
+    function applyAuthorization(){
+        if(authPhase==="starting")autoConfigAttempted=false
+        else if(authPhase==="parameters"){
+            if(_telegram.hasSavedConfiguration){
+                if(!_telegram.busy && !autoConfigAttempted){
+                    autoConfigAttempted=true
+                    if(!_telegram.useSavedConfiguration())openLogin()
+                }
+            }else openLogin()
+        }else if(authPhase==="phone" || authPhase==="code" || authPhase==="password" || authPhase==="email" || authPhase==="emailCode" || authPhase==="failed" || authPhase==="unsupported")openLogin()
+        else if(authPhase==="ready" && navigation.top && navigation.top.objectName==="loginPage")navigation.pop()
+    }
     function openReactions(id){if(!_live.beginReactions(id))return;var page=reactionPageDefinition.createObject();if(page)navigation.push(page);else _live.cancelReactions();}
     function openSchedule(target){var page=schedulePageDefinition.createObject();if(page){page.chosen.connect(function(when){if(target.scheduleDraft(when))navigation.pop();});navigation.push(page);}}
     function previewFeature(name){if(!demo || _live.ready)return;var page=name==="schedule"?schedulePageDefinition.createObject():reactionPageDefinition.createObject();if(page)navigation.push(page);}
@@ -47,6 +66,7 @@ NavigationPane {
         var page=contactsPageDefinition.createObject();if(page){page.livePage=live;navigation.push(page);}
     }
     function openLogin() {
+        if(navigation.top && navigation.top.objectName==="loginPage")return
         var page = loginPageDefinition.createObject();
         if (page) {
             page.closeRequested.connect(function() { navigation.pop(); });
@@ -66,7 +86,7 @@ NavigationPane {
         objectName: "chatsPage"
         actionBarVisibility: ChromeVisibility.Hidden
         titleBar: AppHeader {
-            caption: navigation.live || navigation.demo ? (navigation.archiveView?qsTr("Архив"):qsTr("Чаты")) : "Berrygram"
+            caption: navigation.live || navigation.demo ? (navigation.archiveView?qsTr("Архив"):qsTr("Чаты")) : "Telegram"
             detail: navigation.live ? (_notifications.unread>0?qsTr("Непрочитанных: ")+_notifications.unread+" · "+_live.connectionStatus:_live.connectionStatus) : navigation.demo ? qsTr("Демо · без подключения") : qsTr("Telegram для BlackBerry Classic")
             compact: navigation.live || navigation.demo
             composeVisible: navigation.live || navigation.demo
@@ -96,15 +116,15 @@ NavigationPane {
                 visible: !navigation.live && !navigation.demo
                 leftPadding: ui.du(4); rightPadding: ui.du(4)
                 topPadding: ui.du(6); bottomPadding: ui.du(3)
-                Avatar {imageProvider: _avatars; title: "Berrygram"; chatId: "berrygram"; horizontalAlignment: HorizontalAlignment.Center; bottomMargin: ui.du(2) }
-                Label { text: "Berrygram"; textStyle.base: SystemDefaults.TextStyles.BigText; textStyle.color: Color.create(_prefs.ink); horizontalAlignment: HorizontalAlignment.Center }
+                Avatar {imageProvider: _avatars; title: "Telegram"; chatId: "telegram"; horizontalAlignment: HorizontalAlignment.Center; bottomMargin: ui.du(2) }
+                Label { text: "Telegram"; textStyle.base: SystemDefaults.TextStyles.BigText; textStyle.color: Color.create(_prefs.ink); horizontalAlignment: HorizontalAlignment.Center }
                 Label {
                     text: qsTr("Ваши чаты. Знакомый Telegram.\nНа клавиатуре BlackBerry.")
                     multiline: true; textStyle.color: Color.create(_prefs.secondary); textStyle.textAlign: TextAlign.Center
                     horizontalAlignment: HorizontalAlignment.Fill
                     bottomMargin: ui.du(3)
                 }
-                Button { text: qsTr("Начать общение"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: navigation.openLogin() }
+                Button { text: qsTr("Войти в Telegram"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: navigation.openLogin() }
                 Button { text: qsTr("Посмотреть интерфейс"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: navigation.demo = true }
             }
             Container {
@@ -176,6 +196,7 @@ NavigationPane {
         if(page.objectName==="emojiPage"){_emoji.release();if(navigation.top && navigation.top.objectName==="chatPage")navigation.top.focusAfterEmoji();}
         if(page.objectName==="photoPage")_media.closePhoto();
         if(page.objectName==="reactionPage")_live.cancelReactions();
+        if(page.objectName==="loginPage" && navigation.authPhase!=="ready")navigation.autoConfigAttempted=false;
         page.destroy();
     }
 }

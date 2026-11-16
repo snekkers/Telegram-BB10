@@ -247,7 +247,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.7.1");
+    parameters.insert("application_version", "0.14.0.18");
     return authenticate(parameters);
 }
 
@@ -320,9 +320,11 @@ bool TelegramSession::submit(const QString &value)
         return false;
     QVariantMap call;
     const QString trimmed = value.trimmed();
-    if (m_phase == "phone" && QRegExp("\\+[0-9]{5,15}").exactMatch(trimmed)) {
+    QString phone=trimmed;
+    if(m_phase=="phone")phone.remove(QRegExp("[\\s().-]"));
+    if (m_phase == "phone" && QRegExp("\\+[0-9]{5,15}").exactMatch(phone)) {
         call = method("setAuthenticationPhoneNumber");
-        call.insert("phone_number", trimmed);
+        call.insert("phone_number", phone);
     } else if (m_phase == "code" && !trimmed.isEmpty() && trimmed.size() <= 128) {
         call = method("checkAuthenticationCode");
         call.insert("code", trimmed);

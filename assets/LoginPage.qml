@@ -8,16 +8,16 @@ Page {
     property bool showApi: false
     property bool showDetails: false
     signal closeRequested()
-    titleBar: AppHeader { caption: qsTr("Вход в Telegram"); detail: qsTr("Berrygram для BlackBerry") }
+    titleBar: AppHeader { caption: qsTr("Вход в Telegram"); detail: qsTr("Telegram для BlackBerry") }
 
     function heading() {
-        if (phase === "phone") return qsTr("Ваш номер телефона");
-        if (phase === "code" || phase === "emailCode") return qsTr("Код подтверждения");
-        if (phase === "password") return qsTr("Облачный пароль");
+        if (phase === "phone") return qsTr("Вход по номеру телефона");
+        if (phase === "code" || phase === "emailCode") return qsTr("Введите код");
+        if (phase === "password") return qsTr("Введите пароль");
         if (phase === "email") return qsTr("Адрес электронной почты");
         if (phase === "ready") return qsTr("Вы вошли в Telegram");
         if (phase === "parameters") return qsTr("Подключение к Telegram");
-        return qsTr("Добро пожаловать");
+        return qsTr("Добро пожаловать в Telegram");
     }
     function submitCredential() {
         if (!_telegram.busy && _telegram.submit(credential.text)) credential.text = "";
@@ -44,21 +44,31 @@ Page {
             rightPadding: ui.du(3.2)
             topPadding: ui.du(4)
             bottomPadding: ui.du(3)
+            ImageView {
+                imageSource: "asset:///icon.png"
+                scalingMethod: ScalingMethod.AspectFit
+                preferredWidth: ui.du(16)
+                preferredHeight: ui.du(16)
+                horizontalAlignment: HorizontalAlignment.Center
+                bottomMargin: ui.du(2)
+            }
             Label {
                 text: loginPage.heading()
                 textStyle.base: SystemDefaults.TextStyles.BigText
                 textStyle.color: Color.create(_prefs.ink)
                 multiline: true
+                horizontalAlignment: HorizontalAlignment.Center
             }
             Label {
-                text: phase === "phone" ? qsTr("Введите номер с кодом страны, например +7. Код придёт способом, который выберет Telegram.")
+                text: phase === "phone" ? qsTr("Укажите номер телефона с кодом страны. Telegram отправит код подтверждения в приложение или другим доступным способом.")
                     : phase === "password" ? qsTr("Введите пароль двухэтапной проверки вашего аккаунта.")
-                    : phase === "parameters" ? qsTr("Выберите подключение для этой сборки. Затем можно войти по номеру телефона.")
+                    : phase === "parameters" ? qsTr("Чтобы подключиться, один раз укажите параметры приложения Telegram с my.telegram.org/apps. После этого вход будет проходить по номеру телефона.")
                     : phase === "ready" ? qsTr("Теперь можно открыть ваши чаты.") : _telegram.status
                 textFormat: TextFormat.Plain
                 textStyle.color: Color.create(_prefs.secondary)
                 multiline: true
                 bottomMargin: ui.du(2)
+                horizontalAlignment: HorizontalAlignment.Center
             }
             Container {
                 visible: _telegram.errorText.length > 0
@@ -93,7 +103,7 @@ Page {
                         onClicked: _telegram.useTestConfiguration()
                     }
                     Label {
-                        text: qsTr("Официальные тестовые ключи Telegram. Подходят только для разработки; сервер может ограничить вход. Для обычного использования нужны ключи Berrygram.")
+                        text: qsTr("Официальные тестовые ключи Telegram. Подходят только для разработки; сервер может ограничить вход. Для обычного использования нужны параметры вашего приложения Telegram.")
                         textStyle.base: SystemDefaults.TextStyles.SmallText
                         textStyle.color: Color.create(_prefs.secondary)
                         multiline: true
@@ -136,7 +146,7 @@ Page {
                     hintText: phase === "phone" ? "+7 999 123 45 67" : phase === "password" ? qsTr("Пароль") : phase === "email" ? "name@example.com" : qsTr("Код")
                     enabled: !_telegram.busy
                     maximumLength: 1024
-                    inputMode: phase === "phone" ? TextFieldInputMode.PhoneNumber : phase === "email" ? TextFieldInputMode.EmailAddress : TextFieldInputMode.Password
+                    inputMode: phase === "phone" ? TextFieldInputMode.PhoneNumber : phase === "email" ? TextFieldInputMode.EmailAddress : phase === "password" ? TextFieldInputMode.Password : TextFieldInputMode.NumbersAndPunctuation
                     input {
                         flags: TextInputFlag.AutoCorrectionOff | TextInputFlag.PredictionOff | TextInputFlag.AutoCapitalizationOff
                         submitKey: SubmitKey.Next
@@ -149,7 +159,7 @@ Page {
             Button { text: loginPage.showDetails ? qsTr("Скрыть сведения") : qsTr("Сведения о подключении"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: loginPage.showDetails = !loginPage.showDetails }
             Container {
                 visible: loginPage.showDetails
-                Label { text: "Berrygram 0.11.0" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
+                Label { text: "Telegram 0.14.0.18" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
                 Label { text: qsTr("Сессия хранится на устройстве. Отключение сохраняет вход в аккаунт."); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
             }
         }
