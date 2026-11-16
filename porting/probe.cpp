@@ -27,5 +27,29 @@ int main()
         counter.fetch_add(1);
     });
     worker.join();
-    return text->empty() || counter.load() != 1 || std::sqrt(4.0) != 2.0;
+    if (text->empty() || counter.load() != 1 || std::sqrt(4.0) != 2.0) return 1;
+
+    // Use runtime arguments and function pointers so constant folding cannot
+    // hide recursive C++ wrappers accidentally emitted for libc symbols.
+    typedef const void *(*ConstMemchr)(const void *, int, std::size_t);
+    typedef void *(*MutableMemchr)(void *, int, std::size_t);
+    typedef const char *(*ConstStrchr)(const char *, int);
+    typedef char *(*MutableStrchr)(char *, int);
+    ConstMemchr volatile findConst = static_cast<ConstMemchr>(&std::memchr);
+    MutableMemchr volatile findMutable = static_cast<MutableMemchr>(&std::memchr);
+    ConstStrchr volatile findCharConst = static_cast<ConstStrchr>(&std::strchr);
+    MutableStrchr volatile findCharMutable = static_cast<MutableStrchr>(&std::strchr);
+    const std::size_t position = static_cast<std::size_t>(counter.load());
+    const char *data = text->c_str();
+    const int needle = static_cast<unsigned char>(data[position]);
+    if (findConst(data, needle, text->size()) != data + position) return 10;
+    if (findConst(data, 127, text->size()) != nullptr) return 11;
+    if (findCharConst(data, needle) != data + position) return 12;
+    if (findCharConst(data, 127) != nullptr) return 13;
+    char *mutableData = &(*text)[0];
+    if (findMutable(mutableData, needle, text->size()) != mutableData + position) return 14;
+    if (findMutable(mutableData, 127, text->size()) != nullptr) return 15;
+    if (findCharMutable(mutableData, needle) != mutableData + position) return 16;
+    if (findCharMutable(mutableData, 127) != nullptr) return 17;
+    return 0;
 }

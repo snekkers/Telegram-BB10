@@ -247,7 +247,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.6.0");
+    parameters.insert("application_version", "0.6.1");
     return authenticate(parameters);
 }
 

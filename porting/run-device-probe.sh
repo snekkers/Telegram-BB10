@@ -9,5 +9,6 @@ LD_LIBRARY_PATH="$PROBE_DIRECTORY/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 export LD_LIBRARY_PATH
 "$PROBE_DIRECTORY/bin/cxx17-probe"
 "$PROBE_DIRECTORY/bin/openssl-probe"
-printf '%s\n' '{"@type":"getOption","name":"version","@extra":"device-probe"}' |
-    "$PROBE_DIRECTORY/bin/berrygram-tdjson" --library "$PROBE_DIRECTORY/lib/libtdjson.so"
+"$PROBE_DIRECTORY/bin/berrygram-tdjson" --library "$PROBE_DIRECTORY/lib/libtdjson.so" <<'TDLIB_REQUEST'
+{"@type":"getOption","name":"version","@extra":"device-probe"}
+TDLIB_REQUEST

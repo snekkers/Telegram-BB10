@@ -25,7 +25,7 @@ def main():
             manifest = archive.read("META-INF/MANIFEST.MF").decode()
             assert "Package-Architecture: " + arch + "\n" in manifest
             assert "Application-Development-Mode: true" in manifest
-            assert "Package-Version: 0.6.0.6" in manifest
+            assert "Package-Version: 0.6.1.7" in manifest
             assert "Entry-Point-User-Actions: access_internet" in manifest
             assert manifest.count("\nEntry-Point: ") == 1
             entry = next(line for line in manifest.splitlines() if line.startswith("Entry-Point: "))
@@ -71,6 +71,7 @@ def main():
     assert store_incidents and all(item.get("type") == "pass" for item in store_incidents)
     report = {
         "checked_date": time.strftime("%Y-%m-%d"), "host": "Apple M1 / macOS arm64",
+        "scope": "Build/package and Linux Qt checks; device execution is recorded separately in build/porting/device-tests.json",
         "sdk": "BlackBerry Native SDK 10.3.1.995 / Linux amd64 in Docker",
         "checks": ["Qt 4/C++98 compilation and BAR packaging", "ZIP integrity and ELF architecture",
                    "packaged QML matches source", "ARM engine and library hashes match runtime manifest",
@@ -86,7 +87,7 @@ def main():
                                   "stale history and edit/delete races", "incoming messages and previews",
                                   "pending, acknowledged, sent, read and failed states", "send update/response races",
                                   "timeouts, late replies and no automatic duplicate send", "permissions and data reset", "attachment paths, formats, permissions and recovery", "durable account-scoped outbox, restart and failed write", "cache cleanup protects active and uncertain shared files"]},
-        "not_checked": ["Qt 4 JsonDataAccess execution", "BB10 runtime and QML rendering",
+        "not_checked_by_this_script": ["Qt 4 JsonDataAccess execution", "BB10 runtime and QML rendering",
                         "Telegram network login", "Telegram chat loading, sending and reconnection",
                         "physical Classic installation"],
         "artifacts": artifacts,

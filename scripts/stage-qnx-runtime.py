@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Stage the experimental ARMv7 runtime and offline diagnostics for a BB10 phone."""
+import argparse
 import hashlib
 import json
 import shutil
@@ -14,6 +15,10 @@ from elf32 import inspect
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--device-report", type=Path,
+                        help="Successful device checks bound to all six runtime ELF hashes")
+    args = parser.parse_args()
     work = ROOT / "build/porting/work"
     library = work / "td-native-arm/libtdjson.so.1.8.69"
     link_command = work / "td-native-arm/CMakeFiles/tdjson.dir/link.txt"
@@ -57,6 +62,24 @@ def main():
         del elf["exports"]
         entries.append({"path": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), **elf})
 
+    device_evidence = None
+    if args.device_report:
+        evidence_bytes = args.device_report.read_bytes()
+        evidence = json.loads(evidence_bytes)
+        expected_cases = {
+            "cxx17_and_libc", "openssl_rng_sha256_tls_context", "tdlib_json_unicode_close",
+        }
+        if evidence.get("files") != {entry["path"]: entry["sha256"] for entry in entries}:
+            raise ValueError("Device report does not match the current runtime ELF hashes")
+        if evidence.get("cases") != {name: "passed" for name in expected_cases}:
+            raise ValueError("Device report must contain all required successful checks")
+        if evidence.get("device", {}).get("model") != "SQC100-4":
+            raise ValueError("Device report must identify the tested Classic")
+        device_evidence = {
+            "device": evidence["device"], "cases": evidence["cases"],
+            "report_sha256": hashlib.sha256(evidence_bytes).hexdigest(),
+        }
+
     output = ROOT / "build/device/telegram-runtime"
     output.mkdir(parents=True, exist_ok=True)
     for name, path in inputs.items():
@@ -86,11 +109,15 @@ def main():
         "local_patch_sha256": hashlib.sha256((ROOT / "porting/tdlib-qnx.patch").read_bytes()).hexdigest(),
         "link_undefined_symbols_rejected": True, "json_c_api_exports_verified": True,
         "dependency_files_checked_for_header_shadowing": checked_headers,
-        "device_execution_tested": False, "telegram_login_tested": False, "files": entries,
+        "device_execution_tested": device_evidence is not None,
+        "telegram_login_tested": False, "files": entries,
     }
+    if device_evidence is not None:
+        report["device_verification"] = device_evidence
     (output / "runtime-manifest.json").write_text(json.dumps(report, indent=2) + "\n")
     (output / "README.txt").write_text(
-        "Experimental BB10 ARMv7 runtime. Not an installer or a verified phone build.\n"
+        "Experimental BB10 ARMv7 runtime. Not an installer.\n"
+        "Device-check coverage, exact ELF hashes and remaining limits are in runtime-manifest.json.\n"
         "Copy the whole folder to a BB10 ARM phone with an available native execution transport.\n"
         "Run: sh run-probe.sh\n"
         "The probe checks C++ threads, OpenSSL entropy/SHA-256/TLS context and TDLib startup/close.\n"

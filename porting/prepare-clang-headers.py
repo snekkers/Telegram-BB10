@@ -14,6 +14,14 @@ end = text.index("\nextern int   memcmp", begin)
 # return types but the same C linkage. Clang correctly rejects that. Give the
 # standard C++ overloads C++ linkage and alias both to the existing libc symbol.
 replacement = """#ifdef __cplusplus
+/* These declarations already provide the ISO C++ const/mutable overloads.
+ * Otherwise libstdc++ <cstring> adds inline wrappers with the same assembler
+ * names, which can recursively call themselves through __builtin_memchr and
+ * make optimized parsers assume that every input is empty.
+ */
+#ifndef __CORRECT_ISO_CPP_STRING_H_PROTO
+#define __CORRECT_ISO_CPP_STRING_H_PROTO
+#endif
 extern "C++" {
 extern void *memchr(void *, int, size_t) __asm__("memchr");
 extern const void *memchr(const void *, int, size_t) __asm__("memchr");
