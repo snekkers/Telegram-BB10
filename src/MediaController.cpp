@@ -55,3 +55,13 @@ void MediaController::clearCache(){
     foreach(const QFileInfo &file,QDir(folder()).entryInfoList(QStringList()<<"*.jpg",QDir::Files))if(!file.isSymLink())QFile::remove(file.absoluteFilePath());
     m_status=QString::fromUtf8("Кеш фотографий очищен.");emit changed();
 }
+
+QString MediaController::cacheDescription() const{
+    qlonglong bytes=0;const QFileInfoList files=QDir(folder()).entryInfoList(QStringList()<<"*.jpg",QDir::Files);foreach(const QFileInfo &file,files)if(!file.isSymLink())bytes+=file.size();
+    return QString::fromUtf8("Занято: %1 МБ · файлов: %2").arg(double(bytes)/(1024*1024),0,'f',1).arg(files.size());
+}
+void MediaController::setCacheLimit(int megabytes){
+    PhotoCache::setLimit(megabytes);if(!m_id.isEmpty()){emit changed();return;}
+    const QFileInfoList files=QDir(folder()).entryInfoList(QStringList()<<"*.jpg",QDir::Files,QDir::Time);qlonglong used=0;
+    foreach(const QFileInfo &file,files){if(file.isSymLink())continue;used+=file.size();if(used>qlonglong(PhotoCache::limit())*1024*1024)QFile::remove(file.absoluteFilePath());}emit changed();
+}

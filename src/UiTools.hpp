@@ -22,8 +22,13 @@ public:
     Q_INVOKABLE void openMenu(QObject *page);
     Q_INVOKABLE void copyText(const QString &text);
     Q_INVOKABLE bool acceptSubmit(QObject *page);
+    Q_INVOKABLE void scheduleViewState(QObject *page);
+    Q_INVOKABLE void watchCursor(QObject *page,QObject *field);
+public slots:
+    void flushViewState();
 private slots:
     void checkRequest();
+    void queueCursorState();
     void finishCheck();
     void resumeSaved();
 private:
@@ -35,7 +40,8 @@ private:
     TelegramSession *m_session;
     AvatarProvider *m_avatars;
     bool m_resumeSaved;
-    QTimer m_timer;
+    QTimer m_timer,m_viewTimer;
+    QPointer<QObject> m_viewPage;
     QString m_directory, m_id;
     QVariantMap m_result;
     bool m_checks, m_pending;

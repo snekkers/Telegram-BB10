@@ -12,14 +12,15 @@ Page {
     property string targetTitle: ""
     titleBar: AppHeader {caption: qsTr("Переслать");detail: forwardPage.liveChat?qsTr("Выберите получателя"):qsTr("Демо · без отправки в Telegram");compact: true}
     Container {
-        background: Color.White
+        background: Color.create(_prefs.surface)
         Container {
             leftPadding: ui.du(2);rightPadding: ui.du(2);topPadding: ui.du(1)
-            Label {text: forwardPage.selection.preview || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.secondary)}
+            Label {text: forwardPage.selection.preview || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(_prefs.secondary)}
             TextField {objectName: "recipientSearch";hintText: qsTr("Поиск получателя");enabled: forwardPage.selection.state==="ready";onTextChanged: forwardPage.source.setRecipientQuery(text)}
         }
         ListView {
             property variant avatarProvider: _avatars
+            property variant preferences: _prefs
             objectName: "recipientList"
             enabled: forwardPage.selection.state==="ready"
             dataModel: forwardPage.source.recipients
@@ -38,8 +39,8 @@ Page {
             listItemComponents: [ ListItemComponent {type: "chat";ChatRow {row: ListItemData}} ]
             onTriggered: {var row=dataModel.data(indexPath);forwardPage.targetId=row.chatId;forwardPage.targetTitle=row.title;}
         }
-        Label {visible: forwardPage.liveChat && _live.loadingChats;text: qsTr("Загрузка…");textStyle.color: Color.create(Ui.secondary);horizontalAlignment: HorizontalAlignment.Center}
-        Label {visible: forwardPage.source.recipientCount===0 && !forwardPage.source.canLoadRecipientChats;text: qsTr("Получатели не найдены");textStyle.color: Color.create(Ui.secondary);horizontalAlignment: HorizontalAlignment.Center}
+        Label {visible: forwardPage.liveChat && _live.loadingChats;text: qsTr("Загрузка…");textStyle.color: Color.create(_prefs.secondary);horizontalAlignment: HorizontalAlignment.Center}
+        Label {visible: forwardPage.source.recipientCount===0 && !forwardPage.source.canLoadRecipientChats;text: qsTr("Получатели не найдены");textStyle.color: Color.create(_prefs.secondary);horizontalAlignment: HorizontalAlignment.Center}
         Label {visible: forwardPage.targetId.length>0;text: qsTr("Кому: ")+forwardPage.targetTitle;textFormat: TextFormat.Plain;leftMargin: ui.du(2)}
         Label {visible: (forwardPage.selection.status || "").length>0;text: forwardPage.selection.status || "";textFormat: TextFormat.Plain;multiline: true;leftMargin: ui.du(2);rightMargin: ui.du(2)}
         Button {

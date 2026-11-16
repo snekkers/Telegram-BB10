@@ -87,6 +87,8 @@ public:
     QVariantMap uploadRecord(const QString &id) const;
     QString recoveryWarning() const;
     QString cacheSummary() const { return m_local.summary(); }
+    QString storageSummary() const{return m_storageSummary;}
+    void refreshStorage();
     int cleanupUploads();
     bool sendAttachment(const QString &path, const QString &kind, const QString &caption,
                         int duration = 0, int width = 0, int height = 0);
@@ -110,6 +112,9 @@ public:
     QString mediaMime(const QString &messageId) const;
 
     bool openChat(const QString &id);
+    void saveViewState(const QString &messageId,int cursor);
+    int draftCursor() const;
+    void clearViewPosition();
     bool openChatAt(const QString &id, const QString &messageId);
     void closeChat();
     void loadMoreChats();
@@ -179,6 +184,8 @@ private:
     void recordSendResult(const QVariantMap &message, const QString &recordId, const QString &outcome = QString());
     TelegramSession *m_session;
     LocalOutbox m_local;
+    QVariantMap m_viewState;
+    bool m_viewStateValid;
     QString m_account;
     QMap<QString, QString> m_localMessages;
     qlonglong m_nextCleanup;
@@ -215,6 +222,7 @@ private:
     QString m_infoError, m_infoCursor;
     int m_infoSection, m_memberOffset;
     unsigned m_actionSerial, m_infoSerial;
+    QString m_storageSummary;
     QString m_current, m_error, m_connection, m_seenPhase, m_search, m_chatCategory, m_targetMessage;
     qlonglong m_historyCursor;
     unsigned m_generation;

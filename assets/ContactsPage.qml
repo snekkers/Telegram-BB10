@@ -19,7 +19,7 @@ Page {
     shortcuts: [Shortcut {key: "Escape";onTriggered: navigation.pop()}]
     actions: [ActionItem {objectName: "refreshContactsAction";title: qsTr("Обновить контакты");imageSource: "asset:///icons/history-white.png";enabled: !contactsPage.source.contactsLoading;onTriggered: contactsPage.source.loadContacts()}]
     Container {
-        background: Color.White
+        background: Color.create(_prefs.surface)
         Container {
             leftPadding: ui.du(1.5);rightPadding: ui.du(1.5);topPadding: ui.du(1)
             TextField {id: contactSearch;objectName: "contactSearch";hintText: qsTr("Имя или @username");enabled: !contactsPage.waiting && !contactsPage.source.openingContact;onTextChanged: contactsPage.source.setContactQuery(text)}
@@ -31,10 +31,11 @@ Page {
                 onSelectedValueChanged: contactsPage.source.setContactSection(selectedValue)
             }
         }
-        Label {visible: contactsPage.source.contactsLoading || contactsPage.waiting || contactsPage.source.openingContact;text: contactsPage.waiting || contactsPage.source.openingContact?qsTr("Открываем диалог…"):qsTr("Загрузка контактов…");textStyle.color: Color.create(Ui.secondary);horizontalAlignment: HorizontalAlignment.Center}
+        Label {visible: contactsPage.source.contactsLoading || contactsPage.waiting || contactsPage.source.openingContact;text: contactsPage.waiting || contactsPage.source.openingContact?qsTr("Открываем диалог…"):qsTr("Загрузка контактов…");textStyle.color: Color.create(_prefs.secondary);horizontalAlignment: HorizontalAlignment.Center}
         Label {visible: contactsPage.errorText.length>0;text: contactsPage.errorText;textFormat: TextFormat.Plain;multiline: true;leftMargin: ui.du(2);rightMargin: ui.du(2)}
         ListView {
             property variant avatarProvider: _avatars
+            property variant preferences: _prefs
             id: contactsList
             objectName: "contactsList"
             enabled: !contactsPage.waiting && !contactsPage.source.openingContact && (!contactsPage.livePage || _live.ready)
@@ -48,7 +49,7 @@ Page {
                 if(contactsPage.source.openContact(row.userId,contactsPage))contactsPage.waiting=true;
             }
         }
-        Label {visible: !contactsPage.source.contactsLoading && contactsPage.source.contactCount===0;text: qsTr("Контакты не найдены");textStyle.color: Color.create(Ui.secondary);horizontalAlignment: HorizontalAlignment.Center}
+        Label {visible: !contactsPage.source.contactsLoading && contactsPage.source.contactCount===0;text: qsTr("Контакты не найдены");textStyle.color: Color.create(_prefs.secondary);horizontalAlignment: HorizontalAlignment.Center}
         Button {visible: contactsPage.errorText.length>0 && !contactsPage.source.contactsLoading;text: qsTr("Повторить");horizontalAlignment: HorizontalAlignment.Fill;onClicked: contactsPage.source.loadContacts()}
     }
 }

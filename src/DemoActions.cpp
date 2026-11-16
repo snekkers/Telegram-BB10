@@ -75,3 +75,17 @@ bool ChatController::deleteSelected(bool){
     QVariantList remaining;foreach(const QVariant &value,m_history.value(m_currentChatId))if(!m_selected.contains(value.toMap().value("messageId").toString()))remaining<<value;
     m_history[m_currentChatId]=remaining;clearSelection();return true;
 }
+
+bool ChatController::injectRichDemo(){
+    if(m_currentChatId.isEmpty())return false;QVariantList &history=m_history[m_currentChatId];int id=1;foreach(const QVariant &v,history)id=qMax(id,v.toMap().value("messageId").toString().toInt()+1);
+    const QString text=QString::fromUtf8("Важный текст, код и ссылка https://example.org 😀 <текст>");QVariantMap row;row.insert("messageId",QString::number(id));row.insert("order",history.size());row.insert("date",QDateTime::currentDateTime().toTime_t());row.insert("author",QString::fromUtf8("Анна"));row.insert("text",text);row.insert("outgoing",false);row.insert("textMessage",true);row.insert("link","https://example.org");
+    QVariantList entities;QVariantMap bold,kind;kind.insert("@type","textEntityTypeBold");bold.insert("type",kind);bold.insert("offset",0);bold.insert("length",QString::fromUtf8("Важный").size());entities<<bold;
+    QVariantMap code;kind.insert("@type","textEntityTypeCode");code.insert("type",kind);code.insert("offset",text.indexOf(QString::fromUtf8("код")));code.insert("length",3);entities<<code;
+    QVariantMap link;kind.insert("@type","textEntityTypeUrl");link.insert("type",kind);link.insert("offset",text.indexOf("https://"));link.insert("length",19);entities<<link;QVariantMap formatted;formatted.insert("text",text);formatted.insert("entities",entities);row.insert("formattedText",formatted);
+    history<<row;refreshMessages();++m_incomingSerial;emit currentChatChanged();return true;
+}
+bool ChatController::injectStressDemo(){
+    if(m_currentChatId.isEmpty())return false;QVariantList &history=m_history[m_currentChatId];int id=1;foreach(const QVariant &v,history)id=qMax(id,v.toMap().value("messageId").toString().toInt()+1);
+    for(int i=0;i<300;++i){QVariantMap row;row.insert("messageId",QString::number(id+i));row.insert("order",history.size());row.insert("date",QDateTime::currentDateTime().toTime_t());row.insert("author",QString::fromUtf8("Демо"));row.insert("text",QString::fromUtf8("Проверка длинной истории %1 😀").arg(i+1));row.insert("outgoing",false);row.insert("textMessage",true);history<<row;}
+    refreshMessages();++m_incomingSerial;emit currentChatChanged();return true;
+}

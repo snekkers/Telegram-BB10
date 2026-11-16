@@ -9,7 +9,7 @@ Page {
     onCreationCompleted: _emoji.setCategory(1)
     titleBar: AppHeader { caption: qsTr("Emoji");detail: qsTr("Выберите для вставки");compact: true }
     Container {
-        background: Color.White
+        background: Color.create(_prefs.surface)
         DropDown {
             objectName: "emojiCategory"
             title: qsTr("Категория")

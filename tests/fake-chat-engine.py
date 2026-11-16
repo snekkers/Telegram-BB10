@@ -205,6 +205,10 @@ for line in sys.stdin:
         reply(query, kind="file", **{k: v for k, v in value.items() if k != "@type"})
     elif kind == "fixtureOnlyAllDelete":
         only_all_delete=True;reply(query)
+    elif kind == "getStorageStatistics":
+        assert query["chat_limit"] == 0
+        rows=[{"@type":"storageStatisticsByFileType","file_type":{"@type":"fileTypePhoto"},"size":2097152,"count":2},{"@type":"storageStatisticsByFileType","file_type":{"@type":"fileTypeDocument"},"size":1048576,"count":1}]
+        reply(query,"storageStatistics",size=3145728,count=3,by_chat=[{"@type":"storageStatisticsByChat","chat_id":0,"size":3145728,"count":3,"by_file_type":rows}])
     elif kind == "getMessageProperties":
         actions.append(query)
         reply(query,"messageProperties",can_be_replied=True,can_be_forwarded=query["message_id"]!=999,can_be_edited=query["message_id"]==50,can_be_saved=True,can_be_deleted_only_for_self=query["message_id"]!=999 and not only_all_delete,can_be_deleted_for_all_users=query["message_id"]==50)

@@ -3,6 +3,8 @@
 #include <QString>
 class PhotoCache {
 public:
+    static void setLimit(int megabytes);
+    static int limit();
     static QString scaled(const QString &path,const QString &folder,int edge);
 };
 #endif

@@ -69,3 +69,8 @@ HEADERS += $$PWD/src/MediaController.hpp $$PWD/src/PhotoCache.hpp
 
 SOURCES += $$PWD/src/EmojiCatalog.cpp
 HEADERS += $$PWD/src/EmojiCatalog.hpp
+
+SOURCES += $$PWD/src/Preferences.cpp
+HEADERS += $$PWD/src/Preferences.hpp
+
+HEADERS += $$PWD/src/FormattedText.hpp

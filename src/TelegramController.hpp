@@ -13,11 +13,13 @@ class TelegramController : public QObject {
     Q_PROPERTY(bb::cascades::DataModel* chats READ chats CONSTANT)
     Q_PROPERTY(bb::cascades::DataModel* messages READ messages CONSTANT)
     Q_PROPERTY(QString currentChatTitle READ currentChatTitle NOTIFY changed)
+    Q_PROPERTY(QString currentChatId READ currentChatId NOTIFY changed)
     Q_PROPERTY(QString errorText READ errorText NOTIFY changed)
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY changed)
     Q_PROPERTY(QString composerHint READ composerHint NOTIFY changed)
     Q_PROPERTY(QString failedDraft READ failedDraft NOTIFY changed)
     Q_PROPERTY(QString draftText READ draftText NOTIFY changed)
+    Q_PROPERTY(int draftCursor READ draftCursor NOTIFY changed)
     Q_PROPERTY(bool ready READ ready NOTIFY changed)
     Q_PROPERTY(bool loadingChats READ loadingChats NOTIFY changed)
     Q_PROPERTY(bool loadingHistory READ loadingHistory NOTIFY changed)
@@ -29,6 +31,7 @@ class TelegramController : public QObject {
     Q_PROPERTY(QString attachmentName READ attachmentName NOTIFY changed)
     Q_PROPERTY(QString recoveryWarning READ recoveryWarning NOTIFY changed)
     Q_PROPERTY(QString cacheSummary READ cacheSummary NOTIFY changed)
+    Q_PROPERTY(QString storageSummary READ storageSummary NOTIFY changed)
     Q_PROPERTY(QString mediaError READ mediaError NOTIFY changed)
     Q_PROPERTY(bool recording READ recording NOTIFY changed)
     Q_PROPERTY(bool canAttach READ canAttach NOTIFY changed)
@@ -70,12 +73,16 @@ public:
     explicit TelegramController(TelegramStore *store, QObject *parent = 0);
     bb::cascades::DataModel *chats() const { return m_chats; }
     bb::cascades::DataModel *messages() const { return m_messages; }
+    QString currentChatId() const{return m_store->currentChatId();}
     QString currentChatTitle() const { return m_store->currentChatTitle(); }
     QString errorText() const { return m_store->errorText(); }
     QString connectionStatus() const { return m_store->connectionStatus(); }
     QString composerHint() const { return m_store->composerHint(); }
     QString failedDraft() const { return m_store->failedDraft(); }
     QString draftText() const { return m_store->draftText(); }
+    int draftCursor() const {return m_store->draftCursor();}
+    Q_INVOKABLE void saveViewState(const QString &id,int cursor){m_store->saveViewState(id,cursor);}
+    Q_INVOKABLE bool openReply(const QString &chat,const QString &id){return m_store->openChatAt(chat.isEmpty() || chat=="0"?m_store->currentChatId():chat,id);}
     bool ready() const { return m_store->ready(); }
     bool loadingChats() const { return m_store->loadingChats(); }
     bool loadingHistory() const { return m_store->loadingHistory(); }
@@ -92,7 +99,7 @@ public:
     QString targetMessageId() const { return m_store->targetMessageId(); }
     Q_INVOKABLE void setChatCategory(const QString &category) { m_store->setChatCategory(category); }
     Q_INVOKABLE bool openChatAt(const QString &id, const QString &messageId) { leaveAttachment(); return m_store->openChatAt(id,messageId); }
-    Q_INVOKABLE bool latestMessages() { return openChat(m_store->currentChatId()); }
+    Q_INVOKABLE bool latestMessages() { m_store->clearViewPosition(); return openChat(m_store->currentChatId()); }
     bool archiveView() const { return m_store->archiveView(); }
     Q_INVOKABLE void setArchiveView(bool value) { m_store->setArchiveView(value); }
     Q_INVOKABLE bool setPinned(const QString &id,bool value) { return m_store->setPinned(id,value); }
@@ -154,9 +161,12 @@ public:
     Q_INVOKABLE bool markRead() { return m_store->markRead(); }
     Q_INVOKABLE bool downloadMedia(const QString &id) { return m_store->downloadMedia(id); }
     Q_INVOKABLE bool openMedia(const QString &id);
+    Q_INVOKABLE bool openLink(const QString &url);
     QString attachmentName() const { return m_attachment.value("path").toString().isEmpty() ? m_attachment.value("name").toString() : m_attachment.value("path").toString().section('/', -1); }
     QString recoveryWarning() const { return m_store->recoveryWarning(); }
     QString cacheSummary() const { return m_store->cacheSummary(); }
+    QString storageSummary() const{return m_store->storageSummary();}
+    Q_INVOKABLE void refreshStorage(){m_store->refreshStorage();}
     Q_INVOKABLE void cleanupUploads() { m_store->cleanupUploads(); }
     QString mediaError() const { return m_mediaError; }
     bool recording() const { return m_recording; }

@@ -23,7 +23,7 @@ Page {
     }
     shortcuts: [ Shortcut { key: "Escape"; onTriggered: { if (query.text.length > 0) query.text = ""; else navigation.pop(); } } ]
     Container {
-        background: Color.White
+        background: Color.create(_prefs.surface)
         Container {
             leftPadding: ui.du(1.5); rightPadding: ui.du(1.5); topPadding: ui.du(1); bottomPadding: ui.du(0.5)
             Container {
@@ -61,13 +61,14 @@ Page {
             visible: query.text.trim().length === 0 && !(searchPage.mode === 2 && searchPage.filter > 0)
             text: _search.count > 0 ? qsTr("Недавние запросы") : searchPage.mode === 1 ? qsTr("Люди и боты по имени пользователя, публичные группы и каналы") : searchPage.mode === 2 ? qsTr("Ищите текст во всей переписке или выберите тип вложения") : qsTr("Поиск по личным чатам, группам и каналам")
             multiline: true; textFormat: TextFormat.Plain
-            textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(Ui.secondary)
+            textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary)
             leftMargin: ui.du(2); rightMargin: ui.du(2)
         }
-        Label { visible: _search.loading; text: qsTr("Поиск…"); textStyle.color: Color.create(Ui.secondary); leftMargin: ui.du(2) }
+        Label { visible: _search.loading; text: qsTr("Поиск…"); textStyle.color: Color.create(_prefs.secondary); leftMargin: ui.du(2) }
         Label { visible: _search.errorText.length > 0; text: _search.errorText; textFormat: TextFormat.Plain; multiline: true; textStyle.color: Color.create("#a74132"); leftMargin: ui.du(2); rightMargin: ui.du(2) }
         ListView {
             property variant avatarProvider: _avatars
+            property variant preferences: _prefs
             id: resultList
             objectName: "searchResults"
             dataModel: _search.results
@@ -90,7 +91,7 @@ Page {
         Label {
             visible: !_search.loading && _search.count === 0 && _search.errorText.length === 0 && (query.text.trim().length > 0 || (searchPage.mode === 2 && searchPage.filter > 0))
             text: searchPage.demoSearch ? qsTr("В демоданных ничего не найдено") : qsTr("Ничего не найдено")
-            textStyle.color: Color.create(Ui.secondary); horizontalAlignment: HorizontalAlignment.Center
+            textStyle.color: Color.create(_prefs.secondary); horizontalAlignment: HorizontalAlignment.Center
         }
         Button { visible: query.text.trim().length === 0 && _search.recentQueries.length > 0 && !(searchPage.mode === 2 && searchPage.filter > 0); text: qsTr("Очистить недавние запросы"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: _search.clearRecent() }
         Button { visible: _search.errorText.length > 0 && !_search.loading; text: qsTr("Повторить поиск"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: _search.retry() }

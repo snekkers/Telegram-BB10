@@ -10,6 +10,7 @@
 #include "NotificationCenter.hpp"
 #include "MediaController.hpp"
 #include "EmojiCatalog.hpp"
+#include "Preferences.hpp"
 #include <QResource>
 
 #include <bb/cascades/AbstractPane>
@@ -36,9 +37,11 @@ Q_DECL_EXPORT int main(int argc, char **argv)
     ChatController controller;
     TelegramSession telegram;
     TelegramStore store(&telegram);
+    Preferences preferences;
     EmojiCatalog emoji;
     MediaController media(&store,&controller);
-    NotificationCenter notifications(&telegram,&store);
+    NotificationCenter notifications(&telegram,&store,&preferences);
+    media.setCacheLimit(preferences.photoCacheMb());
     AvatarProvider avatars(&store);
     TelegramController telegramController(&store);
     TelegramSearch telegramSearch(&telegram,&store);
@@ -48,6 +51,7 @@ Q_DECL_EXPORT int main(int argc, char **argv)
 
     bb::cascades::QmlDocument *document =
         bb::cascades::QmlDocument::create("asset:///main.qml").parent(&app);
+    document->setContextProperty("_prefs", &preferences);
     document->setContextProperty("_emoji", &emoji);
     document->setContextProperty("_media", &media);
     document->setContextProperty("_notifications", &notifications);
@@ -77,5 +81,6 @@ Q_DECL_EXPORT int main(int argc, char **argv)
 
     app.setScene(root);
     uiTools.setRoot(root);
+    QObject::connect(QCoreApplication::instance(), SIGNAL(aboutToQuit()), &uiTools, SLOT(flushViewState()));
     return bb::cascades::Application::exec();
 }

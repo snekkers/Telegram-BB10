@@ -13,6 +13,7 @@
 #include <bb/cascades/Application>
 #include <bb/cascades/ImageButton>
 #include <bb/cascades/Button>
+#include <bb/cascades/CheckBox>
 #include <bb/cascades/SegmentedControl>
 #include <bb/cascades/TextField>
 #include <bb/cascades/ListView>
@@ -43,7 +44,7 @@ UiTools::UiTools(ChatController *demo, TelegramController *live, SearchControlle
     : QObject(parent), m_demo(demo), m_live(live), m_search(search),m_session(session),m_avatars(avatars),m_resumeSaved(false),
       m_directory(QDir::currentPath()+"/data/ui-check"), m_checks(false), m_pending(false),m_lastSubmitMs(-1000)
 {
-    m_submitClock.start();
+    m_submitClock.start();m_viewTimer.setSingleShot(true);connect(&m_viewTimer,SIGNAL(timeout()),this,SLOT(flushViewState()));
 #ifdef BERRYGRAM_UI_CHECKS
     m_checks = QFile::exists(m_directory+"/enabled");
     if (m_checks) {
@@ -76,6 +77,13 @@ bool UiTools::acceptSubmit(QObject *page) {
     m_submitPage=page;m_lastSubmitMs=now;return true;
 }
 
+void UiTools::scheduleViewState(QObject *page){if(!page || !page->property("liveChat").toBool())return;m_viewPage=page;m_viewTimer.start(2000);}
+void UiTools::watchCursor(QObject *page,QObject *field){TextArea *area=qobject_cast<TextArea*>(field);if(!area)return;m_viewPage=page;connect(area->editor(),SIGNAL(cursorPositionChanged(int)),this,SLOT(queueCursorState()));}
+void UiTools::queueCursorState(){if(m_viewPage)scheduleViewState(m_viewPage.data());}
+void UiTools::flushViewState(){
+    m_viewTimer.stop();NavigationPane *nav=qobject_cast<NavigationPane*>(m_root.data());QObject *page=nav?nav->top():0;
+    if(page && page->objectName()=="chatPage" && page->property("liveChat").toBool())QMetaObject::invokeMethod(page,"saveViewState");
+}
 void UiTools::checkRequest()
 {
 #ifdef BERRYGRAM_UI_CHECKS
@@ -105,6 +113,8 @@ void UiTools::checkRequest()
         bool ok=false;
         if (action=="demo-list" && navigation->count()==1) {
             navigation->setProperty("demo",true);ok=true;
+        } else if(action=="preferences" && navigation->count()==1){
+            ok=QMetaObject::invokeMethod(navigation,"openSettings");
         } else if(action=="contacts" && navigation->count()==1){
             navigation->setProperty("demo",true);
             ImageButton *button=navigation->top()->titleBar()->findChild<ImageButton*>("newChatButton");
@@ -148,7 +158,12 @@ void UiTools::checkRequest()
         } else if(navigation->top() && navigation->count()>1) {
             Page *page=navigation->top();
             TextArea *field=page->findChild<TextArea*>("messageField");
-            if(action=="emoji-picker"){
+            if(action=="settings-toggle"){
+                const QString field=request.value("field").toString();
+                if(field=="dark" || field=="preview" || field=="enter"){
+                    CheckBox *check=page->findChild<CheckBox*>(field=="dark"?"darkSetting":field=="preview"?"previewSetting":"enterSetting");if(check){check->setChecked(request.value("value").toBool());ok=true;}
+                }else if(field=="font"){DropDown *drop=page->findChild<DropDown*>("fontSetting");if(drop){drop->setSelectedIndex(qBound(0,request.value("value").toInt(),2));ok=true;}}
+            }else if(action=="emoji-picker"){
                 ImageButton *button=page->findChild<ImageButton*>("emojiButton");ok=button && QMetaObject::invokeMethod(button,"clicked");
             }else if(action=="emoji-pick"){
                 ListView *list=page->findChild<ListView*>("emojiList");QVariantList index;index<<request.value("index",0).toInt();ok=list && QMetaObject::invokeMethod(list,"triggered",Q_ARG(QVariantList,index));
@@ -182,6 +197,12 @@ void UiTools::checkRequest()
                 }
             } else if(action=="presence"){
                 m_demo->demoPresence(request.value("status").toString());ok=true;
+            } else if(action=="rich-demo"){
+                ok=m_demo->injectRichDemo();
+            } else if(action=="stress-demo"){
+                ok=m_demo->injectStressDemo();
+            } else if(action=="reply-jump"){
+                ok=QMetaObject::invokeMethod(page,"openReply",Q_ARG(QVariant,QVariant(QString())),Q_ARG(QVariant,QVariant(request.value("message_id").toString())));
             } else if(action=="incoming") {
                 ok=m_demo->injectIncomingDemo();
             } else if(page->objectName()=="chatInfoPage") {
@@ -255,7 +276,7 @@ void UiTools::finishCheck()
     NavigationPane *navigation=qobject_cast<NavigationPane*>(m_root.data());
     const bool demoPage=navigation && navigation->top() && !m_live->ready() &&
         navigation->property("demo").toBool() && (navigation->count()==1 ||
-        navigation->top()->objectName()=="emojiPage" || navigation->top()->objectName()=="photoPage" ||
+        navigation->top()->objectName()=="settingsPage" || navigation->top()->objectName()=="emojiPage" || navigation->top()->objectName()=="photoPage" ||
         navigation->top()->objectName()=="searchPage" ||
         navigation->top()->objectName()=="contactsPage" ||
         navigation->top()->objectName()=="chatInfoPage" || navigation->top()->objectName()=="forwardPage" ||
@@ -284,6 +305,7 @@ void UiTools::finishCheck()
         if(send)m_result.insert("send_enabled",send->property("enabled"));
         m_result.insert("selection_count",m_demo->selectionCount());m_result.insert("selection_state",m_demo->selectionState());
         ListView *emojiList=page->findChild<ListView*>("emojiList");if(emojiList)m_result.insert("emoji_count",emojiList->dataModel()->childCount(QVariantList()));
+        if(page->objectName()=="settingsPage")m_result.insert("dark",page->property("currentDark"));
         if(page->objectName()=="photoPage"){m_result.insert("photo_position",page->property("photoPosition"));m_result.insert("photo_loaded",page->property("photoLoaded"));}
         m_result.insert("message_count",m_demo->messages()->childCount(QVariantList()));
         m_result.insert("chat_count",m_demo->chatCount());
@@ -316,7 +338,8 @@ void UiTools::finishCheck()
         ListScrollStateHandler *history=page->findChild<ListScrollStateHandler*>("historyScroll");
         if(history){m_result.insert("history_at_end",history->isAtEnd());m_result.insert("first_visible",history->firstVisibleItem());}
         QVariantList visibleMessages;
-        for(int i=0;i<m_demo->messages()->childCount(QVariantList());++i)visibleMessages.append(m_demo->messages()->data(QVariantList()<<i));
+        const int messageTotal=m_demo->messages()->childCount(QVariantList());
+        for(int i=qMax(0,messageTotal-10);i<messageTotal;++i)visibleMessages.append(m_demo->messages()->data(QVariantList()<<i));
         m_result.insert("demo_messages",visibleMessages);
         if(page->objectName()=="searchPage")m_result.insert("can_load_search",m_search->canLoadMore());
         TextField *query=page->findChild<TextField*>("searchQuery");

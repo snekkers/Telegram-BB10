@@ -2,6 +2,7 @@
 #include "MessagePresentation.hpp"
 #include "Presence.hpp"
 #include "TelegramSession.hpp"
+#include "PrivateFile.hpp"
 
 #include <QDateTime>
 #include <QFileInfo>
@@ -9,6 +10,7 @@
 #include <QSize>
 #include <QDir>
 #include <QUrl>
+#include <QRegExp>
 #include <algorithm>
 
 namespace {
@@ -77,6 +79,27 @@ QSize photoDimensions(const QByteArray &header)
     }
     return QSize();
 }
+void applyFormatting(QVariantMap *result,const QVariantMap &content){
+    QVariantMap &row=*result;row.remove("link");
+    QString link;QVariantMap formatted=content.value(content.value("@type")=="messageText"?"text":"caption").toMap();
+    const QString body=formatted.value("text").toString();
+    foreach(const QVariant &value,formatted.value("entities").toList()){
+        const QVariantMap entity=value.toMap(),kind=entity.value("type").toMap();const QString type=kind.value("@type").toString();
+        const int offset=entity.value("offset").toInt(),length=entity.value("length").toInt();if(offset<0 || length<=0 || offset>body.size()-length)continue;
+        if(type=="textEntityTypeTextUrl")link=kind.value("url").toString();
+        else if(type=="textEntityTypeUrl")link=body.mid(offset,length);
+        else if(type=="textEntityTypeMention")link="https://t.me/"+body.mid(offset+1,length-1);
+        if(!link.isEmpty())break;
+    }
+    int detectedAt=-1,detectedLength=0;
+    if(link.isEmpty()){QRegExp rx("(https?://[^\\s<>]+|t\\.me/[A-Za-z0-9_+/]+|@[A-Za-z][A-Za-z0-9_]{4,31})");if((detectedAt=rx.indexIn(body))>=0){link=rx.cap(1);detectedLength=link.size();while(!link.isEmpty() && QString(".,!;:)").contains(link.at(link.size()-1))){link.chop(1);--detectedLength;}}}
+    if(link.startsWith("@"))link="https://t.me/"+link.mid(1);else if(link.startsWith("t.me/"))link="https://"+link;
+    const QUrl target(link);if(target.isValid() && (target.scheme()=="https" || target.scheme()=="http") && !target.host().isEmpty() && target.userInfo().isEmpty()){row.insert("link",target.toString());
+        if(detectedAt>=0 && detectedLength>0){QVariantMap entity,kind;kind.insert("@type","textEntityTypeTextUrl");kind.insert("url",target.toString());entity.insert("offset",detectedAt);entity.insert("length",detectedLength);entity.insert("type",kind);QVariantList entities=formatted.value("entities").toList();entities<<entity;formatted.insert("entities",entities);}
+    }
+    row.insert("formattedText",formatted);
+    
+}
 QString draftValue(const QVariant &draft)
 {
     return draft.toMap().value("content").toMap().value("text").toMap().value("text").toString();
@@ -88,6 +111,8 @@ TelegramStore::TelegramStore(TelegramSession *session, QObject *parent, int requ
       m_foreground(true), m_ready(false), m_loadingChats(false), m_loadingHistory(false),
       m_chatsEnd(false), m_historyEnd(false), m_online(true), m_archiveView(false), m_archiveEnd(false), m_infoLoading(false), m_infoEnd(true)
 {
+    const QString viewPath=QDir(m_session->dataDirectory()).filePath("view-state.json");
+    m_viewStateValid=!QFile::exists(viewPath) || PrivateFile::read(viewPath,&m_viewState,131072);
     connect(session, SIGNAL(changed()), this, SLOT(sessionChanged()));
     connect(session, SIGNAL(eventReceived(QVariantMap)), this, SLOT(consume(QVariantMap)));
     connect(&m_expiry, SIGNAL(timeout()), this, SLOT(expireRequests()));
@@ -115,7 +140,7 @@ void TelegramStore::reset()
 {
     suspendLocalSends(); m_account.clear(); m_localMessages.clear();
     ++m_generation;
-    m_selected.clear();m_selectionState.clear();
+    m_selected.clear();m_selectionState.clear();m_storageSummary.clear();
     m_chats.clear(); m_users.clear(); m_requests.clear(); m_outbox.clear();
     m_messages.clear(); m_overlays.clear(); m_historyTouched.clear(); m_removed.clear();
     m_failedDrafts.clear(); m_recoveredTexts.clear(); m_current.clear(); m_error.clear();
@@ -397,6 +422,9 @@ QString TelegramStore::recoveryWarning() const
     return QString();
 }
 
+void TelegramStore::refreshStorage(){
+    if(!m_ready)return;QVariantMap call=method("getStorageStatistics");call.insert("chat_limit",0);m_storageSummary=ru("Подсчитываем файлы…");submit(call,"storage");emit changed();
+}
 int TelegramStore::cleanupUploads() { const int count = m_local.cleanup(); emit changed(); return count; }
 
 void TelegramStore::restoreChatDraft(const QString &id, const QVariant &remote)
@@ -466,8 +494,21 @@ bool TelegramStore::sendAttachment(const QString &path, const QString &kind, con
 
 bool TelegramStore::openChat(const QString &id)
 {
-    return openChatAt(id, QString());
+    const QString position=m_viewState.value(m_account+":"+id).toMap().value("messageId").toString();
+    return openChatAt(id,position);
 }
+void TelegramStore::saveViewState(const QString &messageId,int cursor){
+    if(m_account.isEmpty() || m_current.isEmpty())return;
+    const QString path=QDir(m_session->dataDirectory()).filePath("view-state.json");if(!m_viewStateValid)return;QVariantMap state=m_viewState;
+    QVariantMap item;item.insert("messageId",messageId.toLongLong()>0?QString::number(messageId.toLongLong()):QString());item.insert("cursor",qBound(0,cursor,4096));
+    const QString key=m_account+":"+m_current;state.insert(key,item);while(state.size()>256)state.erase(state.begin());
+    if(state==m_viewState)return;
+    if(!PrivateFile::write(path,state,131072)){m_error=ru("Не удалось сохранить положение в чате.");emit changed();}else m_viewState=state;
+}
+int TelegramStore::draftCursor() const{
+    const QVariantMap item=m_viewState.value(m_account+":"+m_current).toMap();return item.contains("cursor")?qBound(0,item.value("cursor").toInt(),m_drafts.value(m_current).size()):m_drafts.value(m_current).size();
+}
+void TelegramStore::clearViewPosition(){saveViewState(QString(),draftCursor());}
 
 bool TelegramStore::openChatAt(const QString &id, const QString &messageId)
 {
@@ -558,9 +599,10 @@ QVariantMap TelegramStore::messageRow(const QVariantMap &message) const
     row.insert("edited", message.value("edit_date").toInt() > 0);
     const QVariantMap content=message.value("content").toMap();
     row.insert("textMessage",content.value("@type")=="messageText");
-    row.insert("formattedText",content.value(content.value("@type")=="messageText"?"text":"caption"));
+    applyFormatting(&row,content);
     const QVariantMap reply=message.value("reply_to").toMap();
     row.insert("replyMessageId",idString(reply.value("message_id")));
+    row.insert("replyChatId",idString(reply.value("chat_id")));
     row.insert("replyQuote",reply.value("quote").toMap().value("text").toMap().value("text"));
     const QVariantMap origin=message.value("forward_info").toMap().value("origin").toMap();
     row.insert("forwarded",!origin.isEmpty());
@@ -694,8 +736,21 @@ void TelegramStore::upsertMessage(const QVariantMap &message)
         row.insert("text", messageText(overlay.value("content").toMap()));
         row.insert("media", mediaInfo(overlay.value("content").toMap()));
         const QVariantMap content=overlay.value("content").toMap();
-        row.insert("formattedText",content.value(content.value("@type")=="messageText"?"text":"caption"));
+        applyFormatting(&row,content);
         row.insert("textMessage",content.value("@type")=="messageText");
+    QString link;const QVariantMap formatted=content.value(content.value("@type")=="messageText"?"text":"caption").toMap();
+    const QString body=formatted.value("text").toString();
+    foreach(const QVariant &value,formatted.value("entities").toList()){
+        const QVariantMap entity=value.toMap(),kind=entity.value("type").toMap();const QString type=kind.value("@type").toString();
+        const int offset=entity.value("offset").toInt(),length=entity.value("length").toInt();if(offset<0 || length<=0 || offset>body.size()-length)continue;
+        if(type=="textEntityTypeTextUrl")link=kind.value("url").toString();
+        else if(type=="textEntityTypeUrl")link=body.mid(offset,length);
+        else if(type=="textEntityTypeMention")link="https://t.me/"+body.mid(offset+1,length-1);
+        if(!link.isEmpty())break;
+    }
+    if(link.isEmpty()){QRegExp rx("(https?://[^\\s<>]+|t\\.me/[A-Za-z0-9_+/]+|@[A-Za-z][A-Za-z0-9_]{4,31})");if(rx.indexIn(body)>=0)link=rx.cap(1);}
+    if(link.startsWith("@"))link="https://t.me/"+link.mid(1);else if(link.startsWith("t.me/"))link="https://"+link;
+    const QUrl target(link);if(target.isValid() && (target.scheme()=="https" || target.scheme()=="http") && !target.host().isEmpty() && target.userInfo().isEmpty())row.insert("link",target.toString());
     }
     if (overlay.contains("edited")) row.insert("edited", overlay.value("edited"));
     if (overlay.value("acknowledged").toBool()) row.insert("acknowledged", true);
@@ -887,6 +942,7 @@ bool TelegramStore::markRead()
     qlonglong latest = 0;
     for (QMap<qlonglong, QVariantMap>::const_iterator it = m_messages.constBegin(); it != m_messages.constEnd(); ++it)
         if (it.value().value("sendingState").toString().isEmpty() && it.key() > latest) latest = it.key();
+    latest=qMax(latest,m_chats.value(m_current).value("lastMessageId").toLongLong());
     if (!latest) return false;
     QVariantMap call = method("viewMessages"); call.insert("chat_id", number(m_current));
     call.insert("message_ids", QVariantList() << QVariant::fromValue(latest));
@@ -990,6 +1046,16 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
             if (oldest) m_historyCursor = oldest;
             rebuildMessages();
             if (pending.value("initial").toBool()) { markRead(); emit scrollRequested(); }
+        }
+    } else if (kind == "storage") {
+        if(error)m_storageSummary=ru("Не удалось получить сведения о файлах.");
+        else if(type=="storageStatistics"){
+            qlonglong photos=0,documents=0;
+            foreach(const QVariant &chat,object.value("by_chat").toList())foreach(const QVariant &value,chat.toMap().value("by_file_type").toList()){
+                const QVariantMap row=value.toMap();const QString type=row.value("file_type").toMap().value("@type").toString();
+                if(type=="fileTypePhoto")photos+=row.value("size").toLongLong();else if(type=="fileTypeDocument")documents+=row.value("size").toLongLong();
+            }
+            m_storageSummary=ru("Фото: %1 МБ · документы: %2 МБ · всего файлов: %3 МБ").arg(double(photos)/(1024*1024),0,'f',1).arg(double(documents)/(1024*1024),0,'f',1).arg(double(object.value("size").toLongLong())/(1024*1024),0,'f',1);
         }
     } else if (kind == "download") {
         if (error) {
@@ -1187,7 +1253,7 @@ void TelegramStore::consume(const QVariantMap &object)
                 m_messages[id].insert("text", messageText(object.value("new_content").toMap()));
                 m_messages[id].insert("media", mediaInfo(object.value("new_content").toMap()));
                 const QVariantMap content=object.value("new_content").toMap();
-                m_messages[id].insert("formattedText",content.value(content.value("@type")=="messageText"?"text":"caption"));
+                applyFormatting(&m_messages[id],content);
                 m_messages[id].insert("textMessage",content.value("@type")=="messageText");
             }
         } else if (type == "updateMessageEdited") {
@@ -1235,6 +1301,7 @@ void TelegramStore::expireRequests()
             if (kind == "chats") { m_loadingChats = false; m_error = ru("Загрузка чатов не ответила вовремя. Можно повторить."); }
             if (kind == "history" && current) { m_loadingHistory = false; m_error = ru("Загрузка истории не ответила вовремя. Можно повторить."); }
             if (kind == "draft") m_draftInFlight.remove(pending.value("chatId").toString());
+            if(kind=="storage")m_storageSummary=ru("Подсчёт файлов не ответил. Повторите.");
             if (kind == "download") m_downloading.remove(pending.value("fileId").toInt());
             if(kind.startsWith("info") && pending.value("infoSerial").toUInt()==m_infoSerial) {m_infoLoading=false;m_infoError=ru("Сведения не ответили вовремя. Можно повторить.");emit infoChanged();}
             if(kind=="contacts"){m_contactsLoading=false;m_contactsError=ru("Контакты не ответили вовремя. Можно повторить.");emit contactsChanged();}

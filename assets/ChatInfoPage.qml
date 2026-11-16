@@ -12,7 +12,7 @@ Page {
     signal openMessage(string chatId,string messageId)
     titleBar: AppHeader { caption: qsTr("Сведения о чате");detail: infoPage.liveChat?(infoPage.detail.title || ""):qsTr("Демо · изменения локальные");compact: true }
     Container {
-        background: Color.White
+        background: Color.create(_prefs.surface)
         SegmentedControl {
             objectName: "infoTabs"
             leftMargin: ui.du(1.5);rightMargin: ui.du(1.5);topMargin: ui.du(1)
@@ -29,7 +29,7 @@ Page {
                 leftPadding: ui.du(2);rightPadding: ui.du(2);topPadding: ui.du(2);bottomPadding: ui.du(2)
                 Avatar {imageProvider: _avatars;title: infoPage.detail.title || "";chatId: infoPage.detail.chatId || "";avatarKey: infoPage.detail.avatarKey || "";horizontalAlignment: HorizontalAlignment.Center}
                 Label {text: infoPage.detail.title || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.TitleText;horizontalAlignment: HorizontalAlignment.Center}
-                Label {visible: infoPage.detail.group===true;text: (infoPage.detail.channel?qsTr("Подписчиков: "):qsTr("Участников: "))+(infoPage.detail.memberCount || "…");textStyle.color: Color.create(Ui.secondary)}
+                Label {visible: infoPage.detail.group===true;text: (infoPage.detail.channel?qsTr("Подписчиков: "):qsTr("Участников: "))+(infoPage.detail.memberCount || "…");textStyle.color: Color.create(_prefs.secondary)}
                 Label {text: infoPage.detail.description || qsTr("Нет описания");textFormat: TextFormat.Plain;multiline: true}
                 Button {objectName: "notificationsButton";horizontalAlignment: HorizontalAlignment.Fill;enabled: infoPage.detail.notificationsKnown===true;text: !enabled?qsTr("Уведомления: загрузка…"):infoPage.detail.notificationsOn?qsTr("Уведомления включены"):qsTr("Уведомления выключены");onClicked: infoPage.source.setNotifications(!infoPage.detail.notificationsOn)}
                 Button {objectName: "pinChatButton";horizontalAlignment: HorizontalAlignment.Fill;text: infoPage.detail.pinned?qsTr("Открепить чат"):qsTr("Закрепить чат");onClicked: infoPage.source.setPinned(infoPage.detail.chatId,!infoPage.detail.pinned)}
@@ -38,6 +38,7 @@ Page {
         }
         ListView {
             property variant avatarProvider: _avatars
+            property variant preferences: _prefs
             id: infoList
             objectName: "infoList"
             visible: infoPage.section>0
@@ -61,8 +62,8 @@ Page {
                 if(infoPage.section>1 && (row.messageId || "").length>0)infoPage.openMessage(infoPage.detail.chatId,row.messageId);
             }
         }
-        Label {visible: infoPage.source.infoLoading;text: qsTr("Загрузка…");textStyle.color: Color.create(Ui.secondary);horizontalAlignment: HorizontalAlignment.Center}
-        Label {visible: infoPage.section>0 && !infoPage.source.infoLoading && infoPage.source.infoCount===0 && infoPage.source.infoError.length===0;text: infoPage.section===1?qsTr("Список участников пуст"):qsTr("Здесь пока нет общих медиа");horizontalAlignment: HorizontalAlignment.Center;textStyle.color: Color.create(Ui.secondary)}
+        Label {visible: infoPage.source.infoLoading;text: qsTr("Загрузка…");textStyle.color: Color.create(_prefs.secondary);horizontalAlignment: HorizontalAlignment.Center}
+        Label {visible: infoPage.section>0 && !infoPage.source.infoLoading && infoPage.source.infoCount===0 && infoPage.source.infoError.length===0;text: infoPage.section===1?qsTr("Список участников пуст"):qsTr("Здесь пока нет общих медиа");horizontalAlignment: HorizontalAlignment.Center;textStyle.color: Color.create(_prefs.secondary)}
         Label {visible: infoPage.source.infoError.length>0;text: infoPage.source.infoError;textFormat: TextFormat.Plain;multiline: true;leftMargin: ui.du(2);rightMargin: ui.du(2)}
         Label {visible: infoPage.liveChat && _live.errorText.length>0;text: _live.errorText;textFormat: TextFormat.Plain;multiline: true;leftMargin: ui.du(2);rightMargin: ui.du(2)}
         Button {visible: infoPage.source.infoError.length>0 && !infoPage.source.infoLoading && (infoPage.section===0 || infoPage.source.canLoadInfo);text: qsTr("Повторить");horizontalAlignment: HorizontalAlignment.Fill;onClicked: {if(infoPage.section===0)infoPage.source.loadChatInfo();else infoPage.source.loadMoreInfo();}}

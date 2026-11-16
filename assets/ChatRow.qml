@@ -23,7 +23,7 @@ CustomListItem {
                 Label {
                     text: item.row.title
                     textFormat: TextFormat.Plain
-                    textStyle.color: Color.create(Ui.ink)
+                    textStyle.color: Color.create(item.ListItem.view.preferences.ink)
                     textStyle.fontWeight: (item.row.unreadLabel || "").length > 0 ? FontWeight.W600 : FontWeight.W400
                     layoutProperties: StackLayoutProperties { spaceQuota: 1 }
                 }
@@ -38,7 +38,7 @@ CustomListItem {
                     text: item.row.time || ""
                     textFormat: TextFormat.Plain
                     textStyle.base: SystemDefaults.TextStyles.SmallText
-                    textStyle.color: Color.create(Ui.secondary)
+                    textStyle.color: Color.create(item.ListItem.view.preferences.secondary)
                     verticalAlignment: VerticalAlignment.Center
                 }
             }

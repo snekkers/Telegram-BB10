@@ -39,7 +39,7 @@ Page {
     ScrollView {
         scrollViewProperties.scrollMode: ScrollMode.Vertical
         Container {
-            background: Color.White
+            background: Color.create(_prefs.surface)
             leftPadding: ui.du(3.2)
             rightPadding: ui.du(3.2)
             topPadding: ui.du(4)
@@ -47,7 +47,7 @@ Page {
             Label {
                 text: loginPage.heading()
                 textStyle.base: SystemDefaults.TextStyles.BigText
-                textStyle.color: Color.create(Ui.ink)
+                textStyle.color: Color.create(_prefs.ink)
                 multiline: true
             }
             Label {
@@ -56,7 +56,7 @@ Page {
                     : phase === "parameters" ? qsTr("Выберите подключение для этой сборки. Затем можно войти по номеру телефона.")
                     : phase === "ready" ? qsTr("Теперь можно открыть ваши чаты.") : _telegram.status
                 textFormat: TextFormat.Plain
-                textStyle.color: Color.create(Ui.secondary)
+                textStyle.color: Color.create(_prefs.secondary)
                 multiline: true
                 bottomMargin: ui.du(2)
             }
@@ -95,7 +95,7 @@ Page {
                     Label {
                         text: qsTr("Официальные тестовые ключи Telegram. Подходят только для разработки; сервер может ограничить вход. Для обычного использования нужны ключи Berrygram.")
                         textStyle.base: SystemDefaults.TextStyles.SmallText
-                        textStyle.color: Color.create(Ui.secondary)
+                        textStyle.color: Color.create(_prefs.secondary)
                         multiline: true
                     }
                 }
@@ -107,7 +107,7 @@ Page {
                 }
                 Container {
                     visible: loginPage.showApi
-                    Label { text: qsTr("Параметры приложения с my.telegram.org/apps. Это разовая настройка этой сборки."); multiline: true; textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(Ui.secondary) }
+                    Label { text: qsTr("Параметры приложения с my.telegram.org/apps. Это разовая настройка этой сборки."); multiline: true; textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary) }
                     TextField {
                         id: apiId
                         hintText: "api_id"
@@ -149,8 +149,8 @@ Page {
             Button { text: loginPage.showDetails ? qsTr("Скрыть сведения") : qsTr("Сведения о подключении"); horizontalAlignment: HorizontalAlignment.Fill; onClicked: loginPage.showDetails = !loginPage.showDetails }
             Container {
                 visible: loginPage.showDetails
-                Label { text: "Berrygram 0.11.0" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(Ui.secondary); multiline: true }
-                Label { text: qsTr("Сессия хранится на устройстве. Отключение сохраняет вход в аккаунт."); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(Ui.secondary); multiline: true }
+                Label { text: "Berrygram 0.11.0" + (_telegram.version.length > 0 ? " · TDLib " + _telegram.version : ""); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
+                Label { text: qsTr("Сессия хранится на устройстве. Отключение сохраняет вход в аккаунт."); textStyle.base: SystemDefaults.TextStyles.SmallText; textStyle.color: Color.create(_prefs.secondary); multiline: true }
             }
         }
     }

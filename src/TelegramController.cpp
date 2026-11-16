@@ -40,8 +40,9 @@ void TelegramController::reconcile(bb::cascades::ArrayDataModel *model, const QV
     for (int i = 0; i < rows.size(); ++i) {
         const QVariantMap next = rows.at(i).toMap();
         if (i >= model->size()) {
-            model->append(QVariant(next));
-            continue;
+            QVariantList tail;for(int j=i;j<rows.size();++j)tail<<rows.at(j);
+            model->append(tail);
+            break;
         }
         if (model->value(i).toMap().value(key) != next.value(key)) {
             for (int j = i + 1; j < model->size(); ++j) {
@@ -71,6 +72,11 @@ bool TelegramController::openMedia(const QString &id)
     request.setMimeType(m_store->mediaMime(id));
     request.setFileTransferMode(bb::system::FileTransferMode::CopyReadOnly);
     return m_invoke.invoke(request) != 0;
+}
+
+bool TelegramController::openLink(const QString &address){
+    const QUrl url(address);if(!url.isValid() || (url.scheme()!="http" && url.scheme()!="https") || url.host().isEmpty() || !url.userInfo().isEmpty())return false;
+    bb::system::InvokeRequest request;request.setAction("bb.action.OPEN");request.setUri(url);return m_invoke.invoke(request)!=0;
 }
 
 QString TelegramController::newUploadPath(const QString &name)

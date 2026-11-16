@@ -18,6 +18,7 @@ class ChatController : public QObject
     Q_PROPERTY(bb::cascades::DataModel* chats READ chats CONSTANT)
     Q_PROPERTY(bb::cascades::DataModel* messages READ messages CONSTANT)
     Q_PROPERTY(QString currentChatTitle READ currentChatTitle NOTIFY currentChatChanged)
+    Q_PROPERTY(QString currentChatId READ currentChatId NOTIFY currentChatChanged)
     Q_PROPERTY(int chatCount READ chatCount NOTIFY currentChatChanged)
     Q_PROPERTY(int personalCount READ personalCount NOTIFY currentChatChanged)
     Q_PROPERTY(int communityCount READ communityCount NOTIFY currentChatChanged)
@@ -58,6 +59,7 @@ public:
     bb::cascades::DataModel *chats() const;
     bb::cascades::DataModel *messages() const;
     QString currentChatTitle() const;
+    QString currentChatId() const{return m_currentChatId;}
 
     bool archiveView() const { return m_archiveView; }
     Q_INVOKABLE void setArchiveView(bool value) { m_archiveView=value;refreshChats(); }
@@ -94,6 +96,8 @@ public:
     Q_INVOKABLE void setRecipientQuery(const QString &query) { const QString next=query.trimmed().left(128);if(next==m_recipientQuery)return;m_recipientQuery=next;refreshChats(); }
     Q_INVOKABLE void refreshRecipients() { refreshChats(); }
     bool injectIncomingDemo();
+    bool injectRichDemo();
+    bool injectStressDemo();
     bb::cascades::DataModel *contacts() const {return m_contacts;}
     int contactCount() const {return m_contacts->size();}
     bool contactsLoading() const {return false;}

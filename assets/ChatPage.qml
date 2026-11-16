@@ -18,7 +18,7 @@ Page {
     property int pendingNewCount: 0
     property int incomingSerial: liveChat?_live.incomingSerial:_chat.incomingSerial
     property int forwardSerial: liveChat?_live.forwardSerial:_chat.forwardSerial
-    onCreationCompleted: sceneReady=true
+    onCreationCompleted: {sceneReady=true;_ui.watchCursor(chatPage,messageField);}
     onComposerContextChanged: {
         if(!messageField)return;
         var mode=composerContext.mode || "";
@@ -44,6 +44,7 @@ Page {
     onLiveChatChanged: {
         if (liveChat && messageField) {
             messageField.text = _live.draftText;
+            messageField.editor.setCursorPosition(_live.draftCursor);
             if(composerVisible)messageField.requestFocus();
         }
     }
@@ -67,6 +68,18 @@ Page {
         if (liveChat && messageList) scrollToTarget();
     }
 
+    function saveViewState() {
+        if(!liveChat)return;
+        var id=_live.loadingHistory?_live.targetMessageId:"";var index=historyScroll.firstVisibleItem;
+        if(!_live.loadingHistory && !historyScroll.atEnd && index && index.length>0){var row=messageList.dataModel.data(index);if(row && row.messageId)id=row.messageId;}
+        _live.saveViewState(id,messageField.editor.cursorPosition);
+    }
+    function openReply(chat,id){
+        if(!id || id==="0")return;
+        if(liveChat){saveViewState();if(_live.openReply(chat,id)){messageField.text=_live.draftText;messageField.editor.setCursorPosition(_live.draftCursor);}}
+        else if(_chat.openChatAt(_chat.currentChatId,id))scrollToTarget();
+    }
+    function focusAfterEmoji(){if(composerVisible)messageField.requestFocus();}
     function insertEmoji(symbol){messageField.editor.insertPlainText(symbol);messageField.requestFocus();}
     function submitDraft() {
         if (messageField.text.trim().length === 0 && (!liveChat || _live.attachmentName.length === 0)) return;
@@ -150,7 +163,7 @@ Page {
         id: chatContent
         objectName: "chatContent"
         property real measuredHeight: 0
-        background: Color.create(Ui.canvas)
+        background: Color.create(_prefs.canvas)
         horizontalAlignment: HorizontalAlignment.Fill
         verticalAlignment: VerticalAlignment.Fill
         attachedObjects: [ LayoutUpdateHandler { onLayoutFrameChanged: chatContent.measuredHeight = layoutFrame.height } ]
@@ -179,18 +192,21 @@ Page {
 
         ListView {
             property variant avatarProvider: _avatars
+            property variant preferences: _prefs
+            property variant mediaProvider: _media
             id: messageList
             objectName: "messageList"
             stickToEdgePolicy: ListViewStickToEdgePolicy.End
             property bool canReply: chatPage.composerVisible && (!chatPage.liveChat || _live.canSend)
             property bool editingContext: chatPage.composerContext.mode==="edit"
+            property bool selecting: chatPage.source.selectionCount>0
             property real measuredHeight: 0
             property real rowWidth: ui.du(72)
             attachedObjects: [
                 LayoutUpdateHandler {
                     onLayoutFrameChanged: {messageList.rowWidth = layoutFrame.width;messageList.measuredHeight=layoutFrame.height;}
                 },
-                ListScrollStateHandler { id: historyScroll; objectName: "historyScroll"; onAtEndChanged: if(atEnd && navigation.top===chatPage)chatPage.pendingNewCount=0 },
+                ListScrollStateHandler { id: historyScroll; objectName: "historyScroll"; onAtEndChanged: if(atEnd && navigation.top===chatPage)chatPage.pendingNewCount=0; onScrollingChanged: if(!scrolling && chatPage.liveChat && navigation.top===chatPage && !_live.loadingHistory)_ui.scheduleViewState(chatPage) },
                 AutoPager {
                     objectName: "historyPager"
                     enabled: chatPage.liveChat && navigation.top === chatPage && _live.canLoadHistory && _live.errorText.length === 0
@@ -201,9 +217,11 @@ Page {
             ]
             function downloadMedia(id) { _live.downloadMedia(id); }
             function openMedia(id) { _live.openMedia(id); }
+            function openReply(chat,id){chatPage.openReply(chat,id);}
             function openPhoto(id){navigation.openPhoto(id,chatPage.liveChat);}
             function selectMessage(id,remove){var source=chatPage.liveChat?_live:_chat;if(remove)source.clearSelection();source.toggleSelected(id);if(remove)source.prepareSelection("delete");}
             function copyText(text) { _ui.copyText(text); }
+            function openLink(url) { _live.openLink(url); }
             function messageAction(id,action) { (chatPage.liveChat?_live:_chat).beginMessageAction(id,action); }
             dataModel: chatPage.liveChat ? _live.messages : _chat.messages
             layoutProperties: StackLayoutProperties {
@@ -264,7 +282,7 @@ Page {
                             topPadding: ListItemData.joinedPrevious === true ? ui.du(0.15) : ui.du(0.65)
                             bottomPadding: ui.du(0.15)
                             Container {
-                            background: ListItemData.outgoing ? outgoingPaint.imagePaint : incomingPaint.imagePaint
+                            background: messageItem.ListItem.view.preferences.dark ? Color.create(ListItemData.outgoing?"#315942":"#35434e") : (ListItemData.outgoing ? outgoingPaint.imagePaint : incomingPaint.imagePaint)
                             horizontalAlignment: ListItemData.outgoing ? HorizontalAlignment.Right : HorizontalAlignment.Left
                             maxWidth: Math.min(ui.du(58), messageItem.ListItem.view.rowWidth - ui.du(11))
                             leftPadding: ui.du(1.8); rightPadding: ui.du(1.8)
@@ -277,6 +295,7 @@ Page {
                             ActionItem { objectName: "replyAction-"+(ListItemData.messageId || ""); title: qsTr("Ответить"); imageSource: "asset:///icons/reply-white.png"; enabled: messageItem.ListItem.view.canReply && !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"reply") }
                             ActionItem { objectName: "forwardAction-"+(ListItemData.messageId || ""); title: qsTr("Переслать"); imageSource: "asset:///icons/forward-white.png"; enabled: !messageItem.ListItem.view.editingContext && (ListItemData.messageId || "").length>0; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"forward") }
                             ActionItem { objectName: "editAction-"+(ListItemData.messageId || ""); title: qsTr("Изменить"); imageSource: "asset:///icons/edit-white.png"; enabled: !messageItem.ListItem.view.editingContext && ListItemData.outgoing===true && ListItemData.textMessage===true; onTriggered: messageItem.ListItem.view.messageAction(ListItemData.messageId,"edit") }
+                                    ActionItem {title: qsTr("Открыть ссылку");enabled: (ListItemData.link || "").length>0;onTriggered: messageItem.ListItem.view.openLink(ListItemData.link)}
                                     ActionItem {
                                         title: qsTr("Копировать текст")
                                         imageSource: "asset:///icons/copy-white.png"
@@ -287,11 +306,12 @@ Page {
                             ]
                             Label {
                                 visible: ListItemData.forwarded===true
-                                text: (ListItemData.forwardAuthor || "").length>0?qsTr("Переслано от ")+ListItemData.forwardAuthor:qsTr("Пересланное сообщение");textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.blue)
+                                text: (ListItemData.forwardAuthor || "").length>0?qsTr("Переслано от ")+ListItemData.forwardAuthor:qsTr("Пересланное сообщение");textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(messageItem.ListItem.view.preferences.dark?"#b8d8ed":Ui.blue)
                             }
                             Container {
                                 visible: (ListItemData.replyQuote || "").length>0
                                 background: Color.create("#e5edf2")
+                                gestureHandlers: [TapHandler {onTapped: messageItem.ListItem.view.openReply(ListItemData.replyChatId || "", ListItemData.replyMessageId || "")} ]
                                 leftPadding: ui.du(1);rightPadding: ui.du(1);topPadding: ui.du(0.5);bottomPadding: ui.du(0.5)
                                 Label { text: ListItemData.replyQuote || "";textFormat: TextFormat.Plain;textStyle.base: SystemDefaults.TextStyles.SmallText;textStyle.color: Color.create(Ui.blue);maxWidth: Math.min(ui.du(50),messageItem.ListItem.view.rowWidth-ui.du(19)) }
                             }
@@ -307,12 +327,17 @@ Page {
                             EmojiLabel {
                                 visible: (ListItemData.text || "").length > 0
                                 text: ListItemData.text || ""
+                                ink: messageItem.ListItem.view.preferences.dark?"#f2f5f6":Ui.ink
+                                formatted: ListItemData.formattedText || ({})
+                                onLinkActivated: {if(messageItem.ListItem.view.selecting)messageItem.ListItem.view.selectMessage(ListItemData.messageId,false);else messageItem.ListItem.view.openLink(url)}
+                                textSize: messageItem.ListItem.view.preferences.textSize
+                                pixelSize: ui.du(messageItem.ListItem.view.preferences.textSize===0?2.8:messageItem.ListItem.view.preferences.textSize===2?3.8:3.2)
                                 textWidth: Math.min(ui.du(54), messageItem.ListItem.view.rowWidth - ui.du(15))
                                 topMargin: 0; bottomMargin: 0
                             }
                             ImageView {
                                 visible: ListItemData.media !== undefined && ListItemData.media.kind === "photo" && ListItemData.media.localUrl.length > 0
-                                imageSource: visible ? _media.thumbnail(ListItemData.media.localUrl) : ""
+                                imageSource: visible ? messageItem.ListItem.view.mediaProvider.thumbnail(ListItemData.media.localUrl) : ""
                                 preferredWidth: ui.du(42); preferredHeight: ui.du(32)
                                 scalingMethod: ScalingMethod.AspectFit
                                 accessibility.name: qsTr("Фото из сообщения")
@@ -334,7 +359,7 @@ Page {
                                 textFormat: TextFormat.Plain
                                 multiline: true
                                 textStyle.base: SystemDefaults.TextStyles.SmallText
-                                textStyle.color: Color.create(ListItemData.outgoing ? "#698475" : Ui.secondary)
+                                textStyle.color: Color.create(messageItem.ListItem.view.preferences.dark?"#c2cdd2":(ListItemData.outgoing ? "#698475" : Ui.secondary))
                                 horizontalAlignment: HorizontalAlignment.Right
                                 topMargin: ui.du(0.2); bottomMargin: 0
                             }
@@ -424,7 +449,7 @@ Page {
             layout: StackLayout {
                 orientation: LayoutOrientation.LeftToRight
             }
-            background: Color.White
+            background: Color.create(_prefs.surface)
             leftPadding: ui.du(1.2)
             rightPadding: ui.du(0.7)
             topPadding: ui.du(0.7)
@@ -469,21 +494,21 @@ Page {
                 scrollMode: TextAreaScrollMode.Stiff
                 verticalAlignment: VerticalAlignment.Bottom
                 shortcuts: [
-                    Shortcut { objectName: "sendShortcut"; key: "Enter"; onTriggered: chatPage.submitDraft() },
+                    Shortcut { objectName: "sendShortcut"; key: _prefs.sendOnEnter?"Enter":"Alt+Enter"; onTriggered: chatPage.submitDraft() },
                     Shortcut { objectName: "newlineShortcut"; key: "Shift+Enter"; onTriggered: messageField.editor.insertPlainText("\n") }
                 ]
                 attachedObjects: [ LayoutUpdateHandler { onLayoutFrameChanged: messageField.measuredHeight = layoutFrame.height } ]
                 onTextChanged: {
-                    if (chatPage.liveChat) _live.setDraft(text);
+                    if (chatPage.liveChat) {_live.setDraft(text);_ui.scheduleViewState(chatPage);}
                 }
                 layoutProperties: StackLayoutProperties {
                     spaceQuota: 1
                 }
                 input {
-                    submitKey: SubmitKey.Send
+                    submitKey: _prefs.sendOnEnter?SubmitKey.Send:SubmitKey.EnterKey
                     submitKeyFocusBehavior: SubmitKeyFocusBehavior.Keep
                     onSubmitted: {
-                        if (!chatPage.liveChat || _live.canSendSelected) chatPage.submitDraft();
+                        if(_prefs.sendOnEnter){if (!chatPage.liveChat || _live.canSendSelected) chatPage.submitDraft();}else messageField.editor.insertPlainText("\n");
                     }
                 }
             }

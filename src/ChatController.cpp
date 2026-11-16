@@ -118,7 +118,10 @@ void ChatController::refreshMessages()
         "2", m_currentChatId == "demo-anna");
     for (int i = 0; i < rows.size(); ++i) {
         QVariantMap row=rows.at(i).toMap();row.insert("selected",m_selected.contains(row.value("messageId").toString()));row.insert("searchTarget",row.value("messageId").toString()==m_targetMessage && !m_targetMessage.isEmpty());
-        if(i>=m_messages->size())m_messages->append(QVariant(row));
+        if(i>=m_messages->size()){
+            QVariantList tail;for(int j=i;j<rows.size();++j){QVariantMap next=rows.at(j).toMap();next.insert("selected",m_selected.contains(next.value("messageId").toString()));next.insert("searchTarget",next.value("messageId").toString()==m_targetMessage && !m_targetMessage.isEmpty());tail<<next;}
+            m_messages->append(tail);break;
+        }
         else if(m_messages->value(i).toMap().value("messageId")!=row.value("messageId"))m_messages->insert(i,QVariant(row));
         else if(m_messages->value(i).toMap()!=row)m_messages->replace(i,QVariant(row));
     }

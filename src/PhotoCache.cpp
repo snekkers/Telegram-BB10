@@ -8,6 +8,9 @@
 #include <QDateTime>
 #include <QTemporaryFile>
 #include <cstdio>
+namespace { int cacheMegabytes=24; }
+void PhotoCache::setLimit(int value){if(value==8||value==24||value==64)cacheMegabytes=value;}
+int PhotoCache::limit(){return cacheMegabytes;}
 QString PhotoCache::scaled(const QString &path,const QString &folder,int edge){
     QFileInfo file(path);if(!file.isFile() || file.isSymLink() || file.size()>50*1024*1024 || edge<32 || edge>1280)return QString();
     if(QFileInfo(folder).isSymLink() || !QDir().mkpath(folder))return QString();
@@ -20,6 +23,6 @@ QString PhotoCache::scaled(const QString &path,const QString &folder,int edge){
     QTemporaryFile output(folder+"/.photo-XXXXXX");if(!output.open() || !output.setPermissions(QFile::ReadOwner|QFile::WriteOwner) || !image.save(&output,"JPG",85) || !output.flush())return QString();
     if(std::rename(QFile::encodeName(output.fileName()).constData(),QFile::encodeName(target).constData())!=0)return QString();output.setAutoRemove(false);
     const QFileInfoList old=QDir(folder).entryInfoList(QStringList()<<"*.jpg",QDir::Files,QDir::Time);qlonglong bytes=0;
-    for(int i=0;i<old.size();++i){bytes+=old.at(i).size();if((i>=80 || bytes>24*1024*1024) && old.at(i).absoluteFilePath()!=target && !old.at(i).isSymLink())QFile::remove(old.at(i).absoluteFilePath());}
+    for(int i=0;i<old.size();++i){bytes+=old.at(i).size();if((i>=80 || bytes>qlonglong(cacheMegabytes)*1024*1024) && old.at(i).absoluteFilePath()!=target && !old.at(i).isSymLink())QFile::remove(old.at(i).absoluteFilePath());}
     return QUrl::fromLocalFile(target).toString();
 }

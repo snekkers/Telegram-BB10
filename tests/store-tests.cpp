@@ -4,6 +4,7 @@
 #include "AutoPager.hpp"
 #include "Presence.hpp"
 #include "NotificationPolicy.hpp"
+#include "FormattedText.hpp"
 #include "LocalOutbox.hpp"
 #include "PrivateFile.hpp"
 #include "MessagePresentation.hpp"
@@ -90,6 +91,34 @@ private:
     }
 
 private slots:
+    void burstOfMessagesKeepsHistoryConsistent(){
+        Peer peer;ready(peer);open(peer);QElapsedTimer timer;timer.start();
+        for(int id=10000;id<10300;++id){QVariantMap event=object("updateNewMessage"),message=object("message");message.insert("chat_id",A.toLongLong());message.insert("id",id);message.insert("date",1700000000+id);message.insert("content",content(QString::fromUtf8("Проверка 😀")));event.insert("message",message);peer.store.consume(event);}
+        QCOMPARE(peer.store.messages().size(),303);QVERIFY(!row(peer.store,"10299").isEmpty());QVERIFY(timer.elapsed()<30000);
+        QVariantMap removal=object("updateDeleteMessages");removal.insert("chat_id",A.toLongLong());QVariantList ids;for(int id=10000;id<10050;++id)ids<<id;removal.insert("message_ids",ids);peer.store.consume(removal);QCOMPARE(peer.store.messages().size(),253);
+    }
+    void storageBreakdownUsesTelegramStatistics(){
+        Peer peer;ready(peer);peer.store.refreshStorage();QTRY_VERIFY(peer.store.storageSummary().contains(QString::fromUtf8("2,0")) || peer.store.storageSummary().contains("2.0"));
+        QVERIFY(peer.store.storageSummary().contains(QString::fromUtf8("документы")));QVERIFY(peer.store.storageSummary().contains("3.0") || peer.store.storageSummary().contains("3,0"));
+    }
+    void savedViewRestoresForTheSameAccountAndChat(){
+        QTemporaryDir directory;
+        {Peer peer(60000,directory.path());ready(peer);open(peer);peer.store.setDraft(QString::fromUtf8("abc😀def"));peer.store.flushDrafts();peer.store.saveViewState("20",3);peer.store.closeChat();}
+        Peer restored(60000,directory.path());ready(restored);QVERIFY(restored.store.openChat(A));QTRY_VERIFY(!restored.store.loadingHistory());QCOMPARE(restored.store.targetMessageId(),QString("20"));QCOMPARE(restored.store.draftCursor(),3);QVERIFY(restored.store.targetMessageIndex()>=0);
+        open(restored,B);QVERIFY(restored.store.targetMessageId().isEmpty());open(restored,A);QCOMPARE(restored.store.targetMessageId(),QString("20"));restored.store.clearViewPosition();open(restored,A);QVERIFY(restored.store.targetMessageId().isEmpty());
+    }
+    void formattedTextEscapesMarkupAndKeepsEmoji(){
+        const QString text=QString::fromUtf8("A <b> 😀 Б");QVariantMap formatted;formatted.insert("text",text);
+        QVariantMap bold=object("textEntity"),type=object("textEntityTypeBold");bold.insert("offset",2);bold.insert("length",3);bold.insert("type",type);
+        QVariantMap broken=object("textEntity");broken.insert("offset",7);broken.insert("length",1);broken.insert("type",type);
+        formatted.insert("entities",QVariantList()<<bold<<broken);const QString html=FormattedText::html(text,0,formatted);
+        QVERIFY(html.contains("&lt;b&gt;"));QVERIFY(!html.contains("<b><b>"));QVERIFY(html.contains(QString::fromUtf8("😀")));
+    }
+    void messageLinksAreExtractedAndUnsafeSchemesRejected(){
+        Peer peer;ready(peer);open(peer);QVariantMap event=object("updateNewMessage"),message=object("message");message.insert("chat_id",A.toLongLong());message.insert("id",81);message.insert("content",content("hello https://example.org/test"));event.insert("message",message);update(peer,event);
+        QCOMPARE(row(peer.store,"81").value("link").toString(),QString("https://example.org/test"));
+        message.insert("id",82);QVariantMap text=content("click"),formatted=text.value("text").toMap(),entity=object("textEntity"),kind=object("textEntityTypeTextUrl");kind.insert("url","javascript:alert(1)");entity.insert("offset",0);entity.insert("length",5);entity.insert("type",kind);formatted.insert("entities",QVariantList()<<entity);text.insert("text",formatted);message.insert("content",text);event.insert("message",message);update(peer,event);QVERIFY(row(peer.store,"82").value("link").toString().isEmpty());
+    }
     void readOnlyChannelsHideComposerAndPublishersKeepIt() {
         Peer peer;ready(peer);
         QVariantMap source=object("chat");source.insert("id",C.toLongLong());source.insert("title","Channel");

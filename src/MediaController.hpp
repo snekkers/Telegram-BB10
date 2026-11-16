@@ -5,6 +5,7 @@
 class TelegramStore;class ChatController;
 class MediaController:public QObject {
     Q_OBJECT
+    Q_PROPERTY(QString cacheDescription READ cacheDescription NOTIFY changed)
     Q_PROPERTY(QString photoSource READ photoSource NOTIFY changed)
     Q_PROPERTY(QString caption READ caption NOTIFY changed)
     Q_PROPERTY(QString status READ status NOTIFY changed)
@@ -21,6 +22,8 @@ public:
     Q_INVOKABLE bool savePhoto();
     Q_INVOKABLE QString thumbnail(const QString &url);
     Q_INVOKABLE void clearCache();
+    Q_INVOKABLE void setCacheLimit(int megabytes);
+    QString cacheDescription() const;
     QString photoSource() const{return m_source;}QString caption() const{return m_caption;}
     QString status() const{return m_status;}QString position() const;
     bool canPrevious() const{return m_index>0;}bool canNext() const{return m_index>=0 && m_index+1<m_photos.size();}
