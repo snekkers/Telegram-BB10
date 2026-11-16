@@ -391,11 +391,6 @@ QString TelegramStore::recoveryWarning() const
 
     if (m_account.isEmpty()) return QString();
     if (!m_local.healthy() || !m_local.error().isEmpty()) return m_local.error();
-    foreach (const QVariant &value, m_local.entries(m_account)) {
-        const QVariantMap item = value.toMap();
-        if (item.value("chatId") == m_current && item.value("state") == "uncertain")
-            return ru("Результат предыдущей отправки неизвестен. Проверьте историю перед ручным повтором; автоматического повтора нет.");
-    }
     const QVariantMap item = attachmentDraft();
     if (!item.isEmpty() && item.value("path").toString().isEmpty()) return ru("Копия сохранённого вложения отсутствует. Выберите исходный файл заново.");
     return QString();

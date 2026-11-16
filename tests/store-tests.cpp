@@ -413,7 +413,7 @@ private slots:
         QVERIFY(!control(peer, "emit", state).isEmpty());
         QVERIFY(peer.store.sendAttachment(file, "document", "timeout-media"));
         QTRY_VERIFY(!peer.store.sendBusy());
-        QVERIFY(peer.store.recoveryWarning().contains(QString::fromUtf8("Проверьте историю")));
+        QVERIFY(peer.store.recoveryWarning().isEmpty());
         QVERIFY(QFile::exists(file)); QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
         state.insert("state", object("connectionStateReady")); QVERIFY(!control(peer, "emit", state).isEmpty());
         QVERIFY(!control(peer, "releaseMedia").isEmpty());
@@ -428,7 +428,7 @@ private slots:
         control(peer, "crash"); QTRY_COMPARE(peer.session.phase(), QString("failed"));
         ready(peer); open(peer);
         QCOMPARE(peer.store.failedAttachment().value("state").toString(), QString("uncertain"));
-        QVERIFY(peer.store.recoveryWarning().contains(QString::fromUtf8("Проверьте историю")));
+        QVERIFY(peer.store.recoveryWarning().isEmpty());
         QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0);
         QVERIFY(peer.store.recoverAttachment());
         QCOMPARE(control(peer, "stats").value("send_count").toInt(), 0); QVERIFY(QFile::exists(file));
@@ -691,7 +691,7 @@ private slots:
         QTRY_VERIFY(!peer.store.sendBusy());
         QCOMPARE(peer.store.messages().last().toMap().value("delivery").toString(), QString::fromUtf8("Результат отправки неизвестен"));
         QCOMPARE(peer.store.failedDraft(), QString("timeout"));
-        QVERIFY(peer.store.recoveryWarning().contains(QString::fromUtf8("Проверьте историю")));
+        QVERIFY(peer.store.recoveryWarning().isEmpty());
         QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
         QVERIFY(!control(peer, "releaseSend").isEmpty());
         QTRY_VERIFY(!row(peer.store, "3001").isEmpty());
