@@ -11,6 +11,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef Q_OS_BLACKBERRY
+#include <sys/socket.h>
+#endif
 
 namespace {
 QString ru(const char *s) { return QString::fromUtf8(s); }
@@ -21,6 +24,47 @@ QVariantMap method(const char *name)
     return value;
 }
 const int MaxLine = 8 * 1024 * 1024;
+}
+
+#ifdef Q_OS_BLACKBERRY
+TelegramProcess::TelegramProcess() : m_childOutput(-1) {}
+
+TelegramProcess::~TelegramProcess() { releaseChildOutput(); }
+
+bool TelegramProcess::prepareOutput()
+{
+    m_output.abort();
+    releaseChildOutput();
+    int sockets[2];
+    if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sockets) != 0) return false;
+    // BB10's QProcess starts through spawn: explicitly pass the inherited
+    // write descriptor to the worker, and keep the read end out of the child.
+    if (::fcntl(sockets[0], F_SETFD, FD_CLOEXEC) == -1 ||
+        !m_output.setSocketDescriptor(sockets[0], QLocalSocket::ConnectedState, QIODevice::ReadOnly)) {
+        ::close(sockets[0]);
+        ::close(sockets[1]);
+        return false;
+    }
+    m_childOutput = sockets[1];
+    return true;
+}
+
+void TelegramProcess::releaseChildOutput()
+{
+    if (m_childOutput < 0) return;
+    ::close(m_childOutput);
+    m_childOutput = -1;
+}
+
+#endif
+
+QIODevice *TelegramSession::workerOutput()
+{
+#ifdef Q_OS_BLACKBERRY
+    return m_process.output();
+#else
+    return &m_process;
+#endif
 }
 
 TelegramSession::TelegramSession(QObject *parent)
@@ -41,6 +85,10 @@ TelegramSession::TelegramSession(const QString &engine, const QString &library,
 
 void TelegramSession::initialize()
 {
+    m_measureStartupNetwork = false;
+#ifdef BERRYGRAM_UI_CHECKS
+    m_measureStartupNetwork = QFile::exists(QDir::currentPath() + "/data/ui-check/measure-network");
+#endif
     m_sequence = 0;
     m_restartRequested=m_resumeRuntime=false;m_receivedEvents=m_receivedBytes=0;m_uptime.start();
     m_readQueued = false;
@@ -50,7 +98,11 @@ void TelegramSession::initialize()
                           : ru("В этой сборке нет Telegram-движка. Доступно демо.");
     m_timer.setSingleShot(true);
     connect(&m_process, SIGNAL(started()), this, SLOT(started()));
+#ifdef Q_OS_BLACKBERRY
+    connect(workerOutput(), SIGNAL(readyRead()), this, SLOT(readOutput()));
+#else
     connect(&m_process, SIGNAL(readyReadStandardOutput()), this, SLOT(readOutput()));
+#endif
     connect(&m_process, SIGNAL(readyReadStandardError()), this, SLOT(discardErrorOutput()));
     connect(&m_process, SIGNAL(error(QProcess::ProcessError)), this, SLOT(processError(QProcess::ProcessError)));
     connect(&m_process, SIGNAL(finished(int,QProcess::ExitStatus)), this, SLOT(finished(int,QProcess::ExitStatus)));
@@ -105,16 +157,32 @@ void TelegramSession::start()
     childEnvironment.append("LD_LIBRARY_PATH=" + loaderPath);
     m_process.setEnvironment(childEnvironment);
     m_process.setProcessChannelMode(QProcess::SeparateChannels);
+    QStringList arguments = QStringList() << "--library" << m_library;
+#ifdef Q_OS_BLACKBERRY
+    if (!m_process.prepareOutput()) {
+        fail(ru("Не удалось открыть локальный канал Telegram-движка."));
+        return;
+    }
+    arguments << "--output-fd" << QString::number(m_process.childOutput());
+#endif
     setPhase("starting", ru("Запуск Telegram-движка…"));
     m_timer.start(20000);
-    m_process.start(m_engine, QStringList() << "--library" << m_library);
+    m_process.start(m_engine, arguments);
 }
 
 void TelegramSession::started()
 {
+#ifdef Q_OS_BLACKBERRY
+    m_process.releaseChildOutput();
+#endif
     if (m_stopping) {
         m_process.closeWriteChannel();
         return;
+    }
+    if (m_measureStartupNetwork) {
+        QVariantMap verbosity = method("setLogVerbosityLevel");
+        verbosity.insert("new_verbosity_level", 3);
+        request(verbosity);
     }
     QVariantMap getVersion = method("getOption");
     getVersion.insert("name", "version");
@@ -249,7 +317,7 @@ bool TelegramSession::configure(const QString &apiId, const QString &apiHash)
     parameters.insert("system_language_code", "ru");
     parameters.insert("device_model", "BlackBerry Classic");
     parameters.insert("system_version", "BlackBerry 10");
-    parameters.insert("application_version", "0.17.1.24");
+    parameters.insert("application_version", "0.17.2.25");
     const bool accepted=authenticate(parameters);
     if(accepted){m_runtimeApiId=apiId.trimmed();m_runtimeApiHash=hash;}
     return accepted;
@@ -372,10 +440,11 @@ bool TelegramSession::submit(const QString &value)
 void TelegramSession::readOutput()
 {
     m_readQueued = false;
+    QIODevice *output = workerOutput();
     emit batchStarted();
     int processed = 0;
-    while (processed < 64 && (m_process.bytesAvailable() > 0 || m_input.contains('\n'))) {
-        if (!m_input.contains('\n')) m_input.append(m_process.read(65536));
+    while (processed < 64 && (output->bytesAvailable() > 0 || m_input.contains('\n'))) {
+        if (!m_input.contains('\n')) m_input.append(output->read(65536));
         int end;
         while (processed < 64 && (end = m_input.indexOf('\n')) >= 0) {
             ++processed;
@@ -399,7 +468,7 @@ void TelegramSession::readOutput()
         }
     }
     emit batchFinished();
-    if (!m_readQueued && (m_process.bytesAvailable() > 0 || m_input.contains('\n'))) {
+    if (!m_readQueued && (output->bytesAvailable() > 0 || m_input.contains('\n'))) {
         m_readQueued = true;
         QTimer::singleShot(0, this, SLOT(readOutput()));
     }
@@ -517,11 +586,39 @@ void TelegramSession::fail(const QString &message)
 
 void TelegramSession::discardErrorOutput()
 {
-    m_process.readAllStandardError(); // Do not persist TDLib diagnostics with account data.
+    const QByteArray output = m_process.readAllStandardError();
+    if (!m_measureStartupNetwork || m_startupNetworkTrace.size() >= 80) return;
+    // Preserve only named setup stages. Raw TDLib output can contain account data.
+    foreach (const QByteArray &line, output.split('\n')) {
+        QString stage;
+        if (line.contains("ConnectionCreator.cpp:")) {
+            if (line.contains("Receive network flag true")) stage = "network-available";
+            else if (line.contains("Receive network flag false")) stage = "network-unavailable";
+            else if (line.contains("Ready connection (")) stage = "socket-ready";
+            else if (line.contains("Failed connection (")) stage = line.contains("Pong timeout") ? "socket-pong-timeout" : "socket-failed";
+        } else if (line.contains("Session.cpp:")) {
+            if (line.contains("Create GenAuthKeyActor")) stage = "key-exchange-started";
+            else if (line.contains("Failed to open connection")) stage = "session-connection-failed";
+        } else if (line.contains("MessagesManager")) {
+            if (line.contains("Get local history in ")) stage = "local-history-entered";
+            else if (line.contains("Get history in ") && line.contains(" from database from ")) stage = "history-database-read";
+            else if (line.contains("Get history in ") && line.contains(" tries left")) stage = "history-entered";
+            else if (line.contains("Return ") && line.contains(" in result to getChatHistory")) stage = "history-result-built";
+            else if (line.contains("Load ") && line.contains(" chats in ") && line.contains(" from database from ")) stage = "chat-list-database-read";
+            else if (line.contains("Receive ") && line.contains(" expected ") && line.contains(" chats in ") && line.contains(" from database ")) stage = "chat-list-database-result";
+        } else if (line.contains("BigNum.cpp:") && line.contains("is_prime")) {
+            stage = "prime-check";
+        }
+        if (!stage.isEmpty()) m_startupNetworkTrace.append(QString::number(m_uptime.elapsed()) + " " + stage);
+        if (m_startupNetworkTrace.size() >= 80) break;
+    }
 }
 
 void TelegramSession::processError(QProcess::ProcessError error)
 {
+#ifdef Q_OS_BLACKBERRY
+    m_process.releaseChildOutput();
+#endif
     if (!m_stopping && !m_failed && error != QProcess::Crashed)
         fail(ru("Не удалось запустить движок или открыть канал связи. Проверьте комплект библиотек."));
 }
@@ -530,7 +627,10 @@ void TelegramSession::finished(int code, QProcess::ExitStatus exitStatus)
 {
     // readyRead can leave a bounded batch queued when the worker exits. Apply
     // its final send results before notifying the store that it disconnected.
-    while (m_process.bytesAvailable()>0 || m_input.contains('\n')) readOutput();
+#ifdef Q_OS_BLACKBERRY
+    m_process.output()->waitForReadyRead(0);
+#endif
+    while (workerOutput()->bytesAvailable()>0 || m_input.contains('\n')) readOutput();
     m_timer.stop();
     m_pending.clear();
     m_busy = false;

@@ -191,6 +191,7 @@ private:
     void resumeHistoryRequests();
     void rebuildChats();
     void rebuildMessages();
+    void notifyChatUpdates();
     void requestScroll();
     void notifyIncoming();
     void setPositions(QVariantMap *chat, const QVariantList &positions);
@@ -202,7 +203,9 @@ private:
     QVariantMap fileInfo(const QVariantMap &file) const;
     void updateFile(const QVariantMap &file);
     void history(bool initial);
-    void loadChats(bool archive);
+    void retrySlowHistory();
+    void retireHistoryRequests();
+    void loadChats(bool archive, int limit = 40);
     void response(const QVariantMap &object, const QVariantMap &request);
     bool sendContent(const QVariantMap &content, const QString &text, const QVariantMap &attachment = QVariantMap(), uint scheduledAt = 0);
     bool editText(const QString &text);
@@ -230,7 +233,7 @@ private:
     void applyReplyInfo(QVariantMap *row,const QVariantMap &interaction) const;
 
     void suspendLocalSends();
-    void restoreChatDraft(const QString &id, const QVariant &remote);
+    void restoreChatDraft(const QString &id, const QVariant &remote, bool preserveRemote = false);
     void recordSendResult(const QVariantMap &message, const QString &recordId, const QString &outcome = QString());
     TelegramSession *m_session;
     LocalOutbox m_local;
@@ -251,7 +254,7 @@ private:
     QTimer m_expiry;
     QTimer m_draftTimer;
     QTimer m_peopleTimer;
-    bool m_batching, m_chatsDirty, m_messagesDirty;
+    bool m_batching, m_chatsDirty, m_messagesDirty, m_chatUpdatesPending;
     bool m_followingLatest, m_scrollPending, m_historyLocalEnd;
     int m_pendingIncoming;
     QElapsedTimer m_clock;
@@ -267,6 +270,9 @@ private:
     QVariantMap m_selectionState;
     QSet<QString> m_recoveredTexts;
     QSet<qlonglong> m_historyTouched, m_removed;
+    QSet<QString> m_historyRequests;
+    QVariantMap m_historyRetryCall;
+    qlonglong m_historyRetryAt;
     QVariantList m_chatRows, m_messageRows;
     QVariantList m_contactRows;
     QStringList m_contactIds;

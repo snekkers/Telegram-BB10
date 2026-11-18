@@ -24,6 +24,7 @@ class TelegramController : public QObject {
     Q_PROPERTY(QString draftText READ draftText NOTIFY changed)
     Q_PROPERTY(int draftCursor READ draftCursor NOTIFY changed)
     Q_PROPERTY(bool ready READ ready NOTIFY changed)
+    Q_PROPERTY(bool profileReady READ profileReady NOTIFY changed)
     Q_PROPERTY(bool foreground READ foreground NOTIFY changed)
     Q_PROPERTY(bool loadingChats READ loadingChats NOTIFY changed)
     Q_PROPERTY(bool loadingHistory READ loadingHistory NOTIFY changed)
@@ -102,6 +103,7 @@ public:
     Q_INVOKABLE void saveViewState(const QString &id,int cursor){m_store->saveViewState(id,cursor);}
     Q_INVOKABLE bool openReply(const QString &chat,const QString &id){return m_store->openChatAt(chat.isEmpty() || chat=="0"?m_store->currentChatId():chat,id);}
     bool ready() const { return m_store->ready(); }
+    bool profileReady() const { return !m_store->accountKey().isEmpty(); }
     bool foreground() const { return m_store->foreground(); }
     bool loadingChats() const { return m_store->loadingChats(); }
     bool loadingHistory() const { return m_store->loadingHistory(); }

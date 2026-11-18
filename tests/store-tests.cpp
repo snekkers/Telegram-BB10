@@ -35,7 +35,7 @@ struct Peer {
     TelegramStore store;
     Peer(int timeout = 60000, const QString &existing = QString())
         : library((existing.isEmpty() ? directory.path() : existing) + "/libtdjson.so"),
-          session("/source/tests/fake-chat-engine.py", library, QFileInfo(library).absolutePath() + "/private"),
+          session(QFINDTESTDATA("fake-chat-engine.py"), library, QFileInfo(library).absolutePath() + "/private"),
           store(&session, 0, timeout) {
         QFile file(library); file.open(QIODevice::WriteOnly); file.write("fixture"); file.close();
     }
@@ -52,6 +52,7 @@ private:
         QTRY_VERIFY(peer.store.ready());
         QTRY_VERIFY(!peer.store.loadingChats());
         QTRY_COMPARE(peer.store.chats().size(), 3);
+        QTRY_VERIFY(!peer.store.accountKey().isEmpty());
     }
     void open(Peer &peer, const QString &id = A) {
         QVERIFY(peer.store.openChat(id));
@@ -91,6 +92,52 @@ private:
     }
 
 private slots:
+    void startupChatsLoadWhileProfileIsPending() {
+        Peer peer;
+        QFile hold(peer.directory.path() + "/libtdjson.hold-profile");
+        QVERIFY(hold.open(QIODevice::WriteOnly));
+        hold.close();
+        peer.session.start();
+        QTRY_COMPARE(peer.session.phase(), QString("parameters"));
+        QVERIFY(peer.session.configure("12345", QString(32, 'a')));
+        LocalOutbox outbox(peer.session.dataDirectory());
+        QVERIFY(outbox.open());
+        QVERIFY(outbox.rememberDraft("9007199254740990", A, "Saved before launch"));
+        QTRY_COMPARE(peer.store.chats().size(), 3);
+        QVERIFY(peer.store.accountKey().isEmpty());
+        open(peer, B);
+        peer.store.setDraft("Typed while waiting");
+        peer.store.flushDrafts();
+        QVERIFY(!peer.store.canSend());
+        QVERIFY(!control(peer, "releaseProfile").isEmpty());
+        QTRY_VERIFY(!peer.store.accountKey().isEmpty());
+        QCOMPARE(peer.store.draftText(), QString("Typed while waiting"));
+        open(peer, A);
+        QCOMPARE(peer.store.draftText(), QString("Saved before launch"));
+        QVERIFY(!peer.store.loadingChats());
+        QVERIFY(peer.store.canLoadChats());
+    }
+    void chatUpdatesNotifyModelsOncePerBatch() {
+        Peer peer; ready(peer);
+        QSignalSpy chats(&peer.store, SIGNAL(chatsChanged()));
+        QSignalSpy recipients(&peer.store, SIGNAL(recipientChatsChanged()));
+        QSignalSpy state(&peer.store, SIGNAL(changed()));
+        QVERIFY(QMetaObject::invokeMethod(&peer.store, "beginBatch", Qt::DirectConnection));
+        foreach (const QString &id, QStringList() << A << B << C) {
+            QVariantMap event = object("updateChatTitle");
+            event.insert("chat_id", id.toLongLong());
+            event.insert("title", QString("New %1").arg(id));
+            peer.store.consume(event);
+        }
+        QCOMPARE(chats.size(), 0);
+        QCOMPARE(recipients.size(), 0);
+        QCOMPARE(state.size(), 0);
+        QVERIFY(QMetaObject::invokeMethod(&peer.store, "endBatch", Qt::DirectConnection));
+        QCOMPARE(chats.size(), 1);
+        QCOMPARE(recipients.size(), 1);
+        QCOMPARE(state.size(), 1);
+        QCOMPARE(peer.store.chats().first().toMap().value("title").toString(), QString("New %1").arg(A));
+    }
     void groupAndChannelMessagesUseWideLayoutWhilePrivateChatsDoNot() {
         Peer peer; ready(peer); open(peer,A); QVERIFY(peer.store.currentChatWide());
         open(peer,B); QVERIFY(!peer.store.currentChatWide());
@@ -1025,13 +1072,50 @@ private slots:
         QCOMPARE(control(peer, "stats").value("send_count").toInt(), 1);
     }
 
-    void historyTimeoutAllowsRetry() {
-        Peer peer(500); ready(peer);
+    void slowHistoryAutomaticallyRetries() {
+        Peer peer(4000); ready(peer);
         QVERIFY(!control(peer, "holdHistory").isEmpty());
+        QVERIFY(peer.store.openChat(A));
+        QVERIFY(peer.store.loadingHistory());
+        QTRY_VERIFY(!peer.store.loadingHistory());
+        QCOMPARE(peer.store.messages().size(), 3);
+        QVERIFY(peer.store.errorText().isEmpty());
+        QCOMPARE(control(peer, "stats").value("history_calls").toList().size(), 2);
+
+        peer.store.loadMoreHistory();
+        QTRY_VERIFY(!peer.store.loadingHistory());
+        QVERIFY(!control(peer, "releaseHistory").isEmpty());
+        QCOMPARE(peer.store.messages().size(), 4);
+        QVERIFY(peer.store.canLoadHistory());
+    }
+
+    void originalHistoryReplyStillWorksAfterAutomaticRetry() {
+        Peer peer(6000); ready(peer);
+        QVariantMap hold; hold.insert("count", 2);
+        QVERIFY(!control(peer, "holdHistory", hold).isEmpty());
+        QVERIFY(peer.store.openChatAt(A, "30"));
+        QTRY_COMPARE(control(peer, "stats").value("history_calls").toList().size(), 2);
+        QVERIFY(peer.store.loadingHistory());
+        QVERIFY(peer.store.errorText().isEmpty());
+        QVariantMap edited = object("updateMessageContent");
+        edited.insert("message_id", 30);
+        edited.insert("new_content", content("Edited while loading"));
+        update(peer, edited);
+        QVERIFY(!control(peer, "releaseHistory").isEmpty());
+        QTRY_VERIFY(!peer.store.loadingHistory());
+        QCOMPARE(peer.store.targetMessageId(), QString("30"));
+        QCOMPARE(row(peer.store, "30").value("text").toString(), QString("Edited while loading"));
+    }
+
+    void historyTimeoutAllowsRetry() {
+        Peer peer(2500); ready(peer);
+        QVariantMap hold; hold.insert("count", 2);
+        QVERIFY(!control(peer, "holdHistory", hold).isEmpty());
         QVERIFY(peer.store.openChat(A));
         QTRY_VERIFY(!peer.store.loadingHistory());
         QVERIFY(!peer.store.errorText().isEmpty());
         QVERIFY(peer.store.canLoadHistory());
+        QCOMPARE(control(peer, "stats").value("history_calls").toList().size(), 2);
         peer.store.loadMoreHistory();
         QTRY_VERIFY(!peer.store.loadingHistory());
         QCOMPARE(peer.store.messages().size(), 3);

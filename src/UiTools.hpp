@@ -31,6 +31,8 @@ private slots:
     void queueCursorState();
     void finishCheck();
     void resumeSaved();
+    void recordStartupState();
+    void recordStartupReply(const QVariantMap &event);
 private:
     bool capture(const QString &path);
     QPointer<bb::cascades::AbstractPane> m_root;
@@ -48,5 +50,7 @@ private:
     QElapsedTimer m_submitClock;
     QPointer<QObject> m_submitPage;
     qlonglong m_lastSubmitMs;
+    QVariantMap m_startupProbe;
+    QMap<QString, QString> m_startupReads;
 };
 #endif

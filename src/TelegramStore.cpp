@@ -115,9 +115,10 @@ TelegramStore::TelegramStore(TelegramSession *session, QObject *parent, int requ
     m_scheduledBusy=m_scheduledOpen=m_autoDownload=false;m_scheduledSerial=m_downloadSerial=0;
     m_autoWifiAllowed=m_autoMobileAllowed=false;
     m_completedRequests=m_timedOutRequests=m_requestLatency=0;
-    m_batching=m_chatsDirty=m_messagesDirty=false;
+    m_batching = m_chatsDirty = m_messagesDirty = m_chatUpdatesPending = false;
     m_lastReadSubmitted=0;
     m_followingLatest=true;m_scrollPending=false;m_pendingIncoming=0;m_historyLocalEnd=false;
+    m_historyRetryAt = 0;
     connect(session,SIGNAL(batchStarted()),this,SLOT(beginBatch()));
     connect(session,SIGNAL(batchFinished()),this,SLOT(endBatch()));
     const QString viewPath=QDir(m_session->dataDirectory()).filePath("view-state.json");
@@ -149,6 +150,7 @@ void TelegramStore::reset()
 {
     closeScheduled();m_downloads.clear();m_autoSuppressed.clear();emit downloadsChanged();
     suspendLocalSends(); m_account.clear(); m_localMessages.clear();
+    retireHistoryRequests();
     ++m_generation;
     m_selected.clear();m_selectionState.clear();m_storageSummary.clear();
     m_chats.clear(); m_users.clear(); m_requests.clear(); m_outbox.clear();
@@ -160,6 +162,7 @@ void TelegramStore::reset()
     m_avatarFiles.clear();m_avatarQueue.clear();m_avatarQueued.clear();m_avatarActive.clear();m_avatarFailed.clear();m_chatActions.clear();
     emit contactsChanged();emit avatarChanged(QString());
     m_chatRows.clear(); m_messageRows.clear();
+    m_chatUpdatesPending = false;
     m_failedAttachments.clear(); m_sentAttachments.clear(); m_earlyAttachmentOutcomes.clear();m_earlyForwards.clear();
     m_historyCursor = 0; m_targetMessage.clear();
     m_archiveEnd=false;m_composerContext.clear();m_forward.clear();m_info.clear();m_pinnedMessage.clear();++m_pinnedSerial;m_reactionState.clear();++m_reactionSerial;m_infoRows.clear();m_members.clear();m_shared.clear();
@@ -192,9 +195,10 @@ void TelegramStore::sessionChanged()
         value.insert("value", true);
         option.insert("value", value);
         submit(option, "option");
-        submit(method("getMe"), "me");
         m_sentNetwork.clear();
         sendNetworkType();
+        submit(method("getMe"), "me");
+        if (canLoadChats()) loadChats(m_archiveView, 8);
         QVariantMap online = method("setOption"), state = method("optionValueBoolean");
         state.insert("value", m_foreground); online.insert("name", "online"); online.insert("value", state);
         submit(online, "online");
@@ -220,7 +224,7 @@ QString TelegramStore::submit(QVariantMap object, const QString &kind, const QSt
     pending.insert("kind", kind);
     pending.insert("chatId", chatId);
     pending.insert("generation", m_generation);pending.insert("threadId",m_threadId);
-    const int timeout = (kind == "history" || kind == "chats" || kind == "network")
+    const int timeout = (kind == "chats" || kind == "network")
         ? qMin(15000, m_requestTimeoutMs) : m_requestTimeoutMs;
     pending.insert("deadline", m_clock.elapsed() + timeout);
     pending.insert("started",m_clock.elapsed());
@@ -240,14 +244,15 @@ void TelegramStore::loadMoreRecipientChats()
     if(canLoadRecipientChats())loadChats(m_chatsEnd);
 }
 
-void TelegramStore::loadChats(bool archive)
+void TelegramStore::loadChats(bool archive, int limit)
 {
     QVariantMap call = method("loadChats");
     call.insert("chat_list", method(archive ? "chatListArchive" : "chatListMain"));
-    call.insert("limit", 40);
+    call.insert("limit", limit);
     const QString request=submit(call,"chats");
     if(request.isEmpty())return;
     m_requests[request].insert("archive",archive);
+    m_requests[request].insert("limit", limit);
     m_error.clear();
     m_loadingChats = true;
     emit changed();
@@ -448,7 +453,7 @@ void TelegramStore::refreshStorage(){
 }
 int TelegramStore::cleanupUploads() { const int count = m_local.cleanup(); emit changed(); return count; }
 
-void TelegramStore::restoreChatDraft(const QString &id, const QVariant &remote)
+void TelegramStore::restoreChatDraft(const QString &id, const QVariant &remote, bool preserveRemote)
 {
     if (m_dirtyDrafts.contains(id)) return;
     const QVariant local = m_local.draft(m_account, id);
@@ -457,7 +462,7 @@ void TelegramStore::restoreChatDraft(const QString &id, const QVariant &remote)
     if (local.isValid()) { m_drafts.insert(id, local.toString()); m_dirtyDrafts.insert(id, local.toString()); m_draftTimer.start(600); }
     else if (!attachment.isEmpty()) m_drafts.insert(id, attachment.value("caption").toString());
     else if (!text.isEmpty()) m_drafts.insert(id, text.value("text").toString());
-    else m_drafts.insert(id, draftValue(remote));
+    else if (!preserveRemote) m_drafts.insert(id, draftValue(remote));
 }
 
 void TelegramStore::recordSendResult(const QVariantMap &message, const QString &recordId, const QString &outcome)
@@ -554,6 +559,7 @@ void TelegramStore::closeChat()
 {
     closeScheduled();
     flushDrafts();
+    retireHistoryRequests();
     if (m_ready && !m_current.isEmpty()) {
         QVariantMap call = method("closeChat");
         call.insert("chat_id", number(m_current));
@@ -597,16 +603,51 @@ void TelegramStore::history(bool initial)
     call.insert("from_message_id", QVariant::fromValue(initial ? m_targetMessage.toLongLong() : m_historyCursor));
     call.insert("offset", initial && !m_targetMessage.isEmpty() ? -20 : 0);
     call.insert("limit", 50);
-    if(!inComments())call.insert("only_local", !m_online);
+    const bool onlyLocal = !inComments() && !m_online;
+    if(!inComments())call.insert("only_local", onlyLocal);
     QString id = submit(call, "history", m_current);
     if (id.isEmpty())
         return;
     m_requests[id].insert("initial", initial);
-    m_requests[id].insert("onlyLocal",!m_online);
+    m_requests[id].insert("onlyLocal", onlyLocal);
+    m_historyRequests.insert(id);
+    if (onlyLocal) {
+        m_requests[id].insert("deadline", m_clock.elapsed() + qMin(15000, m_requestTimeoutMs));
+    } else {
+        m_historyRetryCall = call;
+        m_historyRetryAt = m_clock.elapsed() + qMin(5000, m_requestTimeoutMs / 2);
+    }
     m_historyTouched.clear();
     m_loadingHistory = true;
     m_error.clear();
     emit changed();
+}
+
+void TelegramStore::retrySlowHistory()
+{
+    if (!m_foreground || !m_online || m_historyRequests.isEmpty() ||
+        !m_historyRetryAt || m_clock.elapsed() < m_historyRetryAt)
+        return;
+    m_historyRetryAt = 0;
+    const QVariantMap original = m_requests.value(*m_historyRequests.constBegin());
+    if (original.value("deadline").toLongLong() <= m_clock.elapsed()) return;
+
+    // TDLib can still answer the first read. Both requests belong to one page
+    // and share its deadline and edit/delete tracking.
+    const QString id = submit(m_historyRetryCall, "history", m_current);
+    m_historyRetryCall.clear();
+    if (id.isEmpty()) return;
+    m_requests[id].insert("initial", original.value("initial"));
+    m_requests[id].insert("deadline", original.value("deadline"));
+    m_historyRequests.insert(id);
+}
+
+void TelegramStore::retireHistoryRequests()
+{
+    foreach (const QString &id, m_historyRequests) m_requests.remove(id);
+    m_historyRequests.clear();
+    m_historyRetryAt = 0;
+    m_historyRetryCall.clear();
 }
 
 void TelegramStore::loadMoreHistory() { if (m_foreground) history(false); }
@@ -878,10 +919,23 @@ void TelegramStore::endBatch(){
     m_chatsDirty=m_messagesDirty=false;
     if(chats)rebuildChats();
     if(messages)rebuildMessages();
+    if (m_chatUpdatesPending) {
+        m_chatUpdatesPending = false;
+        notifyChatUpdates();
+    }
     if(m_scrollPending){m_scrollPending=false;emit scrollRequested();}
     const int incoming=m_pendingIncoming;m_pendingIncoming=0;
     for(int i=0;i<incoming;++i)emit incomingMessage();
     autoDownload();
+}
+void TelegramStore::notifyChatUpdates()
+{
+    if (m_batching) {
+        m_chatUpdatesPending = true;
+        return;
+    }
+    emit recipientChatsChanged();
+    emit changed();
 }
 void TelegramStore::requestScroll(){if(m_batching)m_scrollPending=true;else emit scrollRequested();}
 void TelegramStore::notifyIncoming(){if(m_batching)++m_pendingIncoming;else emit incomingMessage();}
@@ -1061,6 +1115,7 @@ void TelegramStore::setDraft(const QString &text)
 
 void TelegramStore::flushDrafts()
 {
+    if (m_account.isEmpty()) return;
     foreach (const QString &chat, m_dirtyDrafts.keys())
         if (!m_local.rememberDraft(m_account, chat, m_dirtyDrafts.value(chat))) m_error = m_local.error();
     if (!m_ready) return;
@@ -1107,12 +1162,9 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
             m_account = idString(object.value("id"));
             emit avatarChanged(QString());
             if (!m_local.open()) m_error = m_local.error();
-            cleanupUploads();
-            foreach (const QString &existingChat, m_chats.keys()) {
-                if (m_local.draft(m_account, existingChat).isValid() ||
-                    !m_local.latest(m_account, existingChat, "attachment", QStringList() << "draft").isEmpty())
-                    restoreChatDraft(existingChat, QVariant());
-            }
+            foreach (const QString &existingChat, m_chats.keys())
+                restoreChatDraft(existingChat, QVariant(), true);
+            if (!m_dirtyDrafts.isEmpty()) m_draftTimer.start(600);
             foreach (const QVariant &value, m_local.entries(m_account)) {
                 const QVariantMap item = value.toMap();
                 if (item.value("state") == "uncertain" && !item.value("messageId").toString().isEmpty()) {
@@ -1123,7 +1175,6 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
                     if (!request.isEmpty()) m_requests[request].insert("recordId", item.value("recordId"));
                 }
             }
-            loadMoreChats();
         } else m_error = ru("Не удалось определить аккаунт для сохранённых черновиков.");
     } else if (kind == "reconcile") {
         const QVariantMap intent=m_local.entry(pending.value("recordId").toString());
@@ -1135,6 +1186,9 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
         if (error && object.value("code").toInt() == 404) { if(pending.value("archive").toBool())m_archiveEnd=true;else m_chatsEnd=true; }
         else if (error) m_error = ru("Не удалось загрузить чаты (код %1).").arg(object.value("code").toInt());
     } else if (kind == "history" && current) {
+        m_historyRequests.remove(object.value("@extra").toString());
+        if (type != "messages" && !m_historyRequests.isEmpty()) return;
+        retireHistoryRequests();
         m_loadingHistory = false;
         if (error) m_error = ru("Не удалось загрузить историю (код %1).").arg(object.value("code").toInt());
         else if (type == "messages") {
@@ -1291,8 +1345,7 @@ void TelegramStore::consume(const QVariantMap &object)
         m_chats.insert(id, chat);
         rememberAvatar("chat:"+id,source.value("photo").toMap());
         rebuildChats();
-        emit recipientChatsChanged();
-        emit changed();
+        notifyChatUpdates();
         if(m_openingContact && id==m_pendingContactChat){m_openingContact=false;m_pendingContactChat.clear();emit contactChatReady(id);emit changed();}
         if(m_contactSection==1)rebuildContacts();
     } else if (type == "updateUser" || type=="user") {
@@ -1326,10 +1379,9 @@ void TelegramStore::consume(const QVariantMap &object)
             restoreChatDraft(chatId, object.value("draft_message"));
         }
         rebuildChats();
-        emit recipientChatsChanged();
         if(m_contactSection==1)rebuildContacts();
         if (chatId == m_current) rebuildMessages();
-        emit changed();
+        notifyChatUpdates();
     } else if (type == "updateNewMessage" || type == "updateMessageSendSucceeded" || type == "updateMessageSendFailed") {
         QVariantMap message = object.value("message").toMap();
         const QString sendChat = idString(message.value("chat_id"));
@@ -1425,6 +1477,7 @@ void TelegramStore::consume(const QVariantMap &object)
 
 void TelegramStore::expireRequests()
 {
+    retrySlowHistory();
     const qlonglong now = m_clock.elapsed();
     if (now >= m_nextCleanup && !m_account.isEmpty()) { m_nextCleanup = now + 60000; m_local.cleanup(); }
     bool expiredAny = false;
@@ -1450,7 +1503,15 @@ void TelegramStore::expireRequests()
             ++it;
         } else {
             if (kind == "chats") { m_loadingChats = false; m_error = ru("Загрузка чатов не ответила вовремя. Можно повторить."); }
-            if (kind == "history" && current) { m_loadingHistory = false; m_error = ru("Загрузка истории не ответила вовремя. Можно повторить."); }
+            if (kind == "history" && current) {
+                m_historyRequests.remove(it.key());
+                if (m_historyRequests.isEmpty()) {
+                    m_historyRetryAt = 0;
+                    m_historyRetryCall.clear();
+                    m_loadingHistory = false;
+                    m_error = ru("Загрузка истории не ответила вовремя. Можно повторить.");
+                }
+            }
             if (kind == "read" && current) m_lastReadSubmitted=0;
             if (kind == "draft") m_draftInFlight.remove(pending.value("draftKey",pending.value("chatId")).toString());
             if(kind.startsWith("comments-") && current){m_pendingComment.clear();m_error=ru("Комментарии не ответили вовремя. Повторите.");}
@@ -1497,22 +1558,24 @@ void TelegramStore::sendNetworkType(bool force)
 
 void TelegramStore::resumeHistoryRequests()
 {
-    bool retryHistory = m_loadingHistory && !m_current.isEmpty();
+    const bool retryHistory = m_loadingHistory && !m_current.isEmpty();
+    retireHistoryRequests();
     bool retryChats = m_loadingChats, archive = m_archiveView;
+    int chatLimit = 40;
     QMap<QString, QVariantMap>::iterator it = m_requests.begin();
     while (it != m_requests.end()) {
         const QVariantMap pending = it.value();
         const QString kind = pending.value("kind").toString();
-        if (kind == "history" || kind == "chats") {
-            if (kind == "history" && pending.value("chatId") == m_current &&
-                pending.value("generation").toUInt() == m_generation) retryHistory = true;
-            if (kind == "chats") { retryChats = true; archive = pending.value("archive").toBool(); }
+        if (kind == "chats") {
+            retryChats = true;
+            archive = pending.value("archive").toBool();
+            chatLimit = pending.value("limit", 40).toInt();
             // Retire only read requests. Late replies must not complete a new load.
             it = m_requests.erase(it);
         } else ++it;
     }
     if (retryHistory) { m_loadingHistory = false; history(m_messages.isEmpty()); }
-    if (retryChats) { m_loadingChats = false; loadChats(archive); }
+    if (retryChats) { m_loadingChats = false; loadChats(archive, chatLimit); }
 }
 
 void TelegramStore::setForeground(bool value)

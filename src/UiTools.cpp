@@ -51,8 +51,59 @@ UiTools::UiTools(ChatController *demo, TelegramController *live, SearchControlle
         connect(&m_timer,SIGNAL(timeout()),this,SLOT(checkRequest()));
         connect(session,SIGNAL(changed()),this,SLOT(resumeSaved()));
         m_timer.start(750);
+        if (QFile::exists(m_directory + "/measure-startup")) {
+            connect(m_live,SIGNAL(changed()),this,SLOT(recordStartupState()));
+            connect(session,SIGNAL(eventReceived(QVariantMap)),this,SLOT(recordStartupReply(QVariantMap)));
+        }
     }
 #endif
+}
+void UiTools::recordStartupState()
+{
+    if (!m_live->ready() || m_startupProbe.value("complete").toBool()) return;
+    const qlonglong elapsed = m_submitClock.elapsed();
+    if (!m_startupProbe.contains("authorized_ms")) m_startupProbe.insert("authorized_ms", elapsed);
+    m_startupProbe.insert("connection", m_live->connectionStatus());
+    m_startupProbe.insert("chat_count", m_live->chatCount());
+    m_startupProbe.insert("chat_list_loading", m_live->property("loadingChats"));
+    if (!m_live->chatCount() || m_startupProbe.contains("history_started_ms")) return;
+
+    m_startupProbe.insert("history_started_ms", elapsed);
+    QVariantMap control;
+    control.insert("@type", "testSquareInt");
+    control.insert("x", 2);
+    const QString controlId = m_session->sendReady(control);
+    if (!controlId.isEmpty()) m_startupReads.insert(controlId, "local_control");
+    const int count = qMin(3, m_live->chatCount());
+    for (int index = 0; index < count; ++index) {
+        const QVariantMap chat = m_live->chats()->data(QVariantList() << index).toMap();
+        const qlonglong id = chat.value("chatId").toLongLong();
+        if (!id) continue;
+        for (int local = 0; local < 2; ++local) {
+            QVariantMap call;
+            call.insert("@type", "getChatHistory");
+            call.insert("chat_id", id);
+            call.insert("from_message_id", 0);
+            call.insert("offset", 0);
+            call.insert("limit", 50);
+            call.insert("only_local", local != 0);
+            const QString request = m_session->sendReady(call);
+            if (!request.isEmpty()) m_startupReads.insert(request, QString(local ? "local_%1" : "normal_%1").arg(index));
+        }
+    }
+}
+
+void UiTools::recordStartupReply(const QVariantMap &event)
+{
+    const QString name = m_startupReads.take(event.value("@extra").toString());
+    if (name.isEmpty()) return;
+    QVariantMap result;
+    result.insert("elapsed_ms", m_submitClock.elapsed() - m_startupProbe.value("history_started_ms").toLongLong());
+    result.insert("type", event.value("@type"));
+    result.insert("count", event.value("messages").toList().size());
+    if (event.value("@type") == "error") result.insert("code", event.value("code"));
+    m_startupProbe.insert(name, result);
+    if (m_startupReads.isEmpty()) m_startupProbe.insert("complete", true);
 }
 void UiTools::resumeSaved(){
 #ifdef BERRYGRAM_UI_CHECKS
@@ -97,7 +148,7 @@ void UiTools::checkRequest()
     // Checks are strictly offline; they cannot navigate or send in a real account.
     NavigationPane *navigation=qobject_cast<NavigationPane*>(m_root.data());
     const QString operation=request.value("action").toString();
-    if(operation=="session-state" || operation=="resume-saved" || operation=="stop-session" || operation=="live-people" || operation=="disable-checks") {
+    if(operation=="session-state" || operation=="startup-timing" || operation=="resume-saved" || operation=="stop-session" || operation=="live-people" || operation=="disable-checks") {
         if(operation=="resume-saved" && m_session->hasSavedConfiguration()) {
             if(navigation){navigation->setProperty("previewWelcome",false);navigation->setProperty("demo",false);}
             m_resumeSaved=true;
@@ -380,6 +431,10 @@ void UiTools::finishCheck()
         }
     }
     m_result.insert("ready",m_live->ready());m_result.insert("phase",m_session->phase());m_result.insert("has_saved_api",m_session->hasSavedConfiguration());
+    if (!m_startupProbe.isEmpty()) {
+        m_startupProbe.insert("transport", m_session->startupNetworkTrace());
+        m_result.insert("startup_probe", m_startupProbe);
+    }
     if(m_live->ready()){
         m_result.insert("live_contact_count",m_live->contactCount());m_result.insert("live_contacts_loading",m_live->contactsLoading());m_result.insert("live_contacts_error",m_live->contactsError());
     }

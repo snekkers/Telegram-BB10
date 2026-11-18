@@ -25,7 +25,7 @@ held_search = []
 search_calls = []
 network_calls = []
 history_calls = []
-hold_next_history = False
+history_requests_to_hold = 0
 held_history = []
 held_threads = []
 hold_thread = False
@@ -43,6 +43,8 @@ scheduled_cancelled = False
 hold_download = False
 held_downloads = []
 library_path = Path(sys.argv[sys.argv.index("--library") + 1])
+hold_profile = library_path.with_suffix(".hold-profile").exists()
+held_profile = None
 
 def media_file(completed=False, path=""):
     return {"@type": "file", "id": 7, "size": 68, "expected_size": 68,
@@ -125,7 +127,10 @@ for line in sys.stdin:
         if hold_contact:hold_contact=False;held_contact_open.append((query,value))
         else:reply(query,kind="chat",**{k:v for k,v in value.items() if k!="@type"})
     elif kind == "getMe":
-        reply(query, "user", id=USER, first_name="Fixture", last_name="")
+        if hold_profile:
+            held_profile = query
+        else:
+            reply(query, "user", id=USER, first_name="Fixture", last_name="")
     elif kind in ("searchPublicChats", "searchChats", "searchChatsOnServer", "searchMessages"):
         search_calls.append(query)
         if query["query"] == "slow":
@@ -341,8 +346,8 @@ for line in sys.stdin:
         reply(query,"messages",messages=rows,total_count=2)
     elif kind == "getChatHistory":
         history_calls.append(query)
-        if hold_next_history:
-            hold_next_history = False
+        if history_requests_to_hold:
+            history_requests_to_hold -= 1
             held_history.append(query)
         else:
             history(query)
@@ -462,7 +467,11 @@ for line in sys.stdin:
             send({"@type": "updateMessageSendAcknowledged", "chat_id": query["chat_id"], "message_id": 1000})
     elif kind == "fixtureControl":
         op = query["op"]
-        if op == "holdThread":hold_thread=True
+        if op == "releaseProfile":
+            assert held_profile is not None
+            reply(held_profile, "user", id=USER, first_name="Fixture", last_name="")
+            held_profile = None
+        elif op == "holdThread":hold_thread=True
         elif op == "releaseThread":
             hold_thread=False
             for pending in held_threads:reply(pending,"messageThreadInfo",chat_id=A,message_thread_id=300,messages=[message(300,A)],draft_message=None)
@@ -494,7 +503,7 @@ for line in sys.stdin:
                 reply(request, "chats", total_count=1, chat_ids=[C])
             held_search.clear()
         elif op == "holdHistory":
-            hold_next_history = True
+            history_requests_to_hold = query["event"].get("count", 1)
         elif op == "releaseHistory":
             for request in held_history:
                 history(request)

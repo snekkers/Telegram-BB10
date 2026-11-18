@@ -6,6 +6,25 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QVariantMap>
+#include <QStringList>
+#ifdef Q_OS_BLACKBERRY
+#include <QLocalSocket>
+
+// QNX pipes can block the host while Qt is still servicing the UI. Keep
+// process lifetime and stdin in QProcess, and carry replies on a socketpair.
+class TelegramProcess : public QProcess {
+public:
+    TelegramProcess();
+    ~TelegramProcess();
+    bool prepareOutput();
+    void releaseChildOutput();
+    QLocalSocket *output() { return &m_output; }
+    int childOutput() const { return m_childOutput; }
+private:
+    QLocalSocket m_output;
+    int m_childOutput;
+};
+#endif
 
 // Qt 4/C++98 boundary. TDLib and its GNU C++ runtime live only in the child.
 class TelegramSession : public QObject {
@@ -36,6 +55,7 @@ public:
     QString savedApiId() const;
     bool testConfigurationAvailable() const;
     QString dataDirectory() const { return m_dataDirectory; }
+    QStringList startupNetworkTrace() const { return m_startupNetworkTrace; }
 
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
@@ -75,8 +95,13 @@ private:
     QString request(QVariantMap object);
     bool authenticate(QVariantMap object);
     bool loadDatabaseKey(QByteArray *key);
+    QIODevice *workerOutput();
 
+#ifdef Q_OS_BLACKBERRY
+    TelegramProcess m_process;
+#else
     QProcess m_process;
+#endif
     QTimer m_timer;
     QString m_engine, m_library, m_dataDirectory;
     QString m_phase, m_status, m_error, m_version, m_pending, m_versionRequest, m_authorizationType;
@@ -88,6 +113,8 @@ private:
     QString m_runtimeApiId,m_runtimeApiHash;
     QElapsedTimer m_uptime;
     quint64 m_receivedEvents, m_receivedBytes;
+    QStringList m_startupNetworkTrace;
+    bool m_measureStartupNetwork;
     Q_DISABLE_COPY(TelegramSession)
 };
 #endif

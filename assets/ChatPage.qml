@@ -20,6 +20,14 @@ Page {
         pendingNewCount=0;messageField.text=_live.draftText;messageField.editor.setCursorPosition(_live.draftCursor);
     }
     property bool sceneReady: false
+    property bool profileReady: liveChat && _live.profileReady
+    onProfileReadyChanged: {
+        if (profileReady && sceneReady && messageField && composerContext.mode !== "edit" &&
+            messageField.text !== _live.draftText) {
+            messageField.text = _live.draftText;
+            messageField.editor.setCursorPosition(_live.draftCursor);
+        }
+    }
     property variant composerContext: liveChat?_live.composerContext:_chat.composerContext
     property string composerKey: ""
     property string beforeEditDraft: ""
