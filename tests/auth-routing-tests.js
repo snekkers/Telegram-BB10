@@ -48,6 +48,44 @@ assert.deepEqual(stack.map(page => page.objectName), ['chatsPage', 'loginPage'])
 assert.equal(context.demo, false);
 assert.equal(context.archiveView, false);
 
+const mainQml = fs.readFileSync(path.join(assets, 'main.qml'), 'utf8');
+const logOutAction = mainQml.match(/objectName: "logOutAction"\s+title: ([^\n]+)\s+enabled: ([^\n]+)\s+onTriggered: \{([^}]+)\}/);
+assert(logOutAction, 'The chat menu must expose the logout action');
+let dialogs = 0, logOuts = 0;
+const menu = {
+    live: true, demo: false, qsTr: text => text,
+    _telegram: {busy: false, logOut() {logOuts++;}},
+    logOutDialog: {show() {dialogs++;}},
+    System: {SystemUiResult: {ConfirmButtonSelection: 2}}
+};
+menu.navigation = menu;
+vm.createContext(menu);
+vm.runInContext(method('main.qml', 'requestLogOut'), menu);
+assert.equal(vm.runInContext(logOutAction[1], menu), 'Выйти из аккаунта');
+assert.equal(vm.runInContext(logOutAction[2], menu), true);
+vm.runInContext(logOutAction[3], menu);
+assert.equal(dialogs, 1);
+assert.equal(logOuts, 0);
+const confirm = mainQml.match(/onFinished: (if \(value === System\.SystemUiResult\.ConfirmButtonSelection\) _telegram\.logOut\(\))/);
+assert(confirm, 'The shared dialog must require confirmation');
+menu.value = 3;
+vm.runInContext(confirm[1], menu);
+assert.equal(logOuts, 0);
+menu.value = 2;
+vm.runInContext(confirm[1], menu);
+assert.equal(logOuts, 1);
+menu._telegram.busy = true;
+assert.equal(vm.runInContext(logOutAction[2], menu), false);
+menu.requestLogOut();
+assert.equal(dialogs, 1);
+menu.live = false;
+menu.demo = true;
+assert.equal(vm.runInContext(logOutAction[1], menu), 'Выйти из демо');
+vm.runInContext(logOutAction[3], menu);
+assert.equal(menu.demo, false);
+assert.equal(logOuts, 1);
+console.log('Chat menu logout passed: confirmation, cancellation, busy guard and demo exit.');
+
 let configured = 0;
 const preview = {loginActive: false, previewing: true, phase: 'parameters', _telegram: {
     busy: false, hasSavedConfiguration: false, testConfigurationAvailable: true,

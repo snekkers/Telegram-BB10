@@ -1,5 +1,4 @@
 import bb.cascades 1.3
-import bb.system 1.2
 import "Ui.js" as Ui
 Page {
     id: page
@@ -58,18 +57,8 @@ Page {
                 text: _telegram.busy ? qsTr("Выход из аккаунта…") : qsTr("Выйти из аккаунта")
                 visible: _telegram.phase === "ready"
                 enabled: !_telegram.busy
-                onClicked: logOutDialog.show()
+                onClicked: navigation.requestLogOut()
             }
         }
     }
-    attachedObjects: [
-        SystemDialog {
-            id: logOutDialog
-            title: qsTr("Выйти из аккаунта?")
-            body: qsTr("Для повторного входа понадобится номер телефона и подтверждение от Telegram.")
-            confirmButton.label: qsTr("Выйти")
-            cancelButton.label: qsTr("Отмена")
-            onFinished: if (value === SystemUiResult.ConfirmButtonSelection) _telegram.logOut()
-        }
-    ]
 }

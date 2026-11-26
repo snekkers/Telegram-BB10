@@ -1,4 +1,5 @@
 import bb.cascades 1.3
+import bb.system 1.2 as System
 import Berrygram 1.0
 import "Ui.js" as Ui
 
@@ -77,6 +78,9 @@ NavigationPane {
     function openScheduled(){var page=scheduledDefinition.createObject();if(page)navigation.push(page);}
     function openScheduledEditor(row){var page=scheduledEditorDefinition.createObject();if(page){page.row=row;navigation.push(page);}}
     function openSettings(){var page=settingsPageDefinition.createObject();if(page)navigation.push(page);}
+    function requestLogOut() {
+        if (live && !_telegram.busy) logOutDialog.show()
+    }
     function openEmoji(target) {
         var page=emojiPageDefinition.createObject();if(page){page.picked.connect(function(symbol){target.insertEmoji(symbol);});navigation.push(page);}
     }
@@ -139,7 +143,15 @@ NavigationPane {
             ActionItem { objectName: "globalSearchAction"; title: qsTr("Поиск"); imageSource: "asset:///icons/search-white.png"; enabled: (navigation.live || navigation.demo) && navigation.top===chatsPage; onTriggered: navigation.openSearch() },
             ActionItem { objectName: "archiveAction"; title: navigation.archiveView?qsTr("К чатам"):qsTr("Архив"); imageSource: "asset:///icons/archive-white.png"; enabled: navigation.live || navigation.demo; onTriggered: navigation.setArchive(!navigation.archiveView) },
             ActionItem { title: navigation.live ? qsTr("Подключение") : qsTr("Войти в Telegram"); imageSource: "asset:///icons/settings-white.png"; onTriggered: navigation.live ? navigation.openDiagnostics() : navigation.openLogin() },
-            ActionItem { title: qsTr("Выйти из демо"); enabled: navigation.demo && !navigation.live; onTriggered: navigation.demo = false }
+            ActionItem {
+                objectName: "logOutAction"
+                title: navigation.live ? qsTr("Выйти из аккаунта") : qsTr("Выйти из демо")
+                enabled: navigation.live ? !_telegram.busy : navigation.demo
+                onTriggered: {
+                    if (navigation.live) navigation.requestLogOut()
+                    else navigation.demo = false
+                }
+            }
         ]
         Container {
             background: Color.create(_prefs.surface)
@@ -177,6 +189,14 @@ NavigationPane {
                     }
                 }
                 Label { visible: navigation.live && _live.errorText.length > 0; text: _live.errorText; textFormat: TextFormat.Plain; multiline: true; leftMargin: ui.du(2); rightMargin: ui.du(2); textStyle.color: Color.create("#a74132") }
+                Label {
+                    visible: navigation.live && (_telegram.busy || _telegram.errorText.length > 0)
+                    text: _telegram.busy ? qsTr("Выход из аккаунта…") : _telegram.errorText
+                    textFormat: TextFormat.Plain
+                    multiline: true
+                    leftMargin: ui.du(2); rightMargin: ui.du(2)
+                    textStyle.color: Color.create(_telegram.busy ? _prefs.secondary : "#a74132")
+                }
                 ListView {
             property variant avatarProvider: _avatars
             property variant preferences: _prefs
@@ -220,6 +240,14 @@ NavigationPane {
         }
     }
     attachedObjects: [
+        System.SystemDialog {
+            id: logOutDialog
+            title: qsTr("Выйти из аккаунта?")
+            body: qsTr("Для повторного входа понадобится номер телефона и подтверждение от Telegram.")
+            confirmButton.label: qsTr("Выйти")
+            cancelButton.label: qsTr("Отмена")
+            onFinished: if (value === System.SystemUiResult.ConfirmButtonSelection) _telegram.logOut()
+        },
         ComponentDefinition {id: voiceDefinition;source: "VoicePage.qml"},
         ComponentDefinition {id: diagnosticsDefinition;source: "DiagnosticsPage.qml"},
         ComponentDefinition {id: downloadsDefinition;source: "DownloadsPage.qml"},
