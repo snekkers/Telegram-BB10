@@ -1,4 +1,5 @@
 import bb.cascades 1.3
+import bb.system 1.2
 import "Ui.js" as Ui
 Page {
     id: page
@@ -46,6 +47,29 @@ Page {
             Button {visible: _live.ready;text: qsTr("Обновить сведения о файлах");onClicked: _live.refreshStorage()}
             Label {visible: _live.ready;text: _live.cacheSummary;multiline: true;textStyle.color: Color.create(_prefs.secondary)}
             Button {visible: _live.ready;text: qsTr("Очистить старые отправленные копии");onClicked: _live.cleanupUploads()}
+            Label {
+                visible: _telegram.phase === "ready" && _telegram.errorText.length > 0
+                text: _telegram.errorText
+                multiline: true
+                textStyle.color: Color.create("#b3261e")
+            }
+            Button {
+                objectName: "logOutButton"
+                text: _telegram.busy ? qsTr("Выход из аккаунта…") : qsTr("Выйти из аккаунта")
+                visible: _telegram.phase === "ready"
+                enabled: !_telegram.busy
+                onClicked: logOutDialog.show()
+            }
         }
     }
+    attachedObjects: [
+        SystemDialog {
+            id: logOutDialog
+            title: qsTr("Выйти из аккаунта?")
+            body: qsTr("Для повторного входа понадобится номер телефона и подтверждение от Telegram.")
+            confirmButton.label: qsTr("Выйти")
+            cancelButton.label: qsTr("Отмена")
+            onFinished: if (value === SystemUiResult.ConfirmButtonSelection) _telegram.logOut()
+        }
+    ]
 }

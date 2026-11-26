@@ -11,6 +11,7 @@ Page {
     property bool loginActive: false
     signal closeRequested()
     function heading() {
+        if (phase === "loggingOut") return qsTr("Выход из аккаунта");
         if (phase === "password") return qsTr("Ваш пароль");
         if (phase === "code" || phase === "emailCode") return qsTr("Код подтверждения");
         if (phase === "email") return qsTr("Ваша почта");
@@ -18,6 +19,7 @@ Page {
         return qsTr("Ваш номер телефона");
     }
     function explanation() {
+        if (phase === "loggingOut" || phase === "starting") return _telegram.status;
         if (phase === "password") return qsTr("Включена двухэтапная проверка.\nВаш аккаунт защищён дополнительным паролем.");
         if (phase === "code") return qsTr("Введите код, полученный от Telegram.");
         if (phase === "emailCode") return qsTr("Введите код из письма Telegram.");
@@ -158,6 +160,7 @@ Page {
             ActivityIndicator {visible: !loginPage.previewing && _telegram.busy;running: visible;preferredWidth: ui.du(4);preferredHeight: ui.du(4);horizontalAlignment: HorizontalAlignment.Center}
             Button {
                 objectName: "loginContinue"
+                visible: phase === "phone" || credential.visible
                 text: qsTr("Продолжить")
                 appearance: ControlAppearance.Primary
                 preferredHeight: ui.du(7.5)

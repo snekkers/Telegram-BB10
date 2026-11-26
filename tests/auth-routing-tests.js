@@ -32,6 +32,22 @@ context.authPhase = 'password'; context.applyAuthorization(); assert.equal(opens
 context._telegram.hasSavedConfiguration = true; context._telegram.busy = true;
 context.authPhase = 'parameters'; context.autoConfigAttempted = false;
 context.applyAuthorization(); assert.equal(saved, 1);
+const removed = [];
+context.chatsPage = {objectName: 'chatsPage'};
+const stack = [context.chatsPage, {objectName: 'settingsPage'}, {objectName: 'diagnosticsPage'}];
+Object.defineProperty(context.navigation, 'top', {get: () => stack[stack.length - 1]});
+context.navigation.remove = page => stack.pop() === page;
+context.releasePage = page => removed.push(page.objectName);
+context.setArchive = value => {context.archiveView = value;};
+context.openLogin = () => stack.push({objectName: 'loginPage'});
+context.demo = context.archiveView = true;
+context.authPhase = 'loggingOut';
+context.applyAuthorization();
+assert.deepEqual(removed, ['diagnosticsPage', 'settingsPage']);
+assert.deepEqual(stack.map(page => page.objectName), ['chatsPage', 'loginPage']);
+assert.equal(context.demo, false);
+assert.equal(context.archiveView, false);
+
 let configured = 0;
 const preview = {loginActive: false, previewing: true, phase: 'parameters', _telegram: {
     busy: false, hasSavedConfiguration: false, testConfigurationAvailable: true,

@@ -220,9 +220,16 @@ bool TelegramSession::authenticate(QVariantMap object)
     return true;
 }
 
+bool TelegramSession::logOut()
+{
+    if (m_phase != "ready" || m_busy || m_stopping || m_failed)
+        return false;
+    return authenticate(method("logOut"));
+}
+
 QString TelegramSession::sendReady(QVariantMap object)
 {
-    if (m_phase != "ready" || m_stopping || m_failed)
+    if (m_phase != "ready" || m_busy || m_stopping || m_failed)
         return QString();
     return request(object);
 }
@@ -492,7 +499,10 @@ void TelegramSession::handle(const QVariantMap &object)
             // Whitelist symbolic errors. Never show or log raw requests/errors.
             QString message = object.value("message").toString();
             QRegExp flood("FLOOD_WAIT_([0-9]+)");
-            if (message == "PHONE_CODE_INVALID" || message == "EMAIL_CODE_INVALID")
+            if (m_phase == "ready")
+                m_error = ru("Не удалось выйти из аккаунта (код %1). Проверьте соединение и попробуйте снова.")
+                    .arg(object.value("code").toInt());
+            else if (message == "PHONE_CODE_INVALID" || message == "EMAIL_CODE_INVALID")
                 m_error = ru("Неверный код. Попробуйте ещё раз.");
             else if (message == "PASSWORD_HASH_INVALID")
                 m_error = ru("Неверный пароль двухэтапной проверки.");
@@ -545,12 +555,24 @@ void TelegramSession::authorization(const QVariantMap &state)
         setPhase("emailCode", ru("Введите код из письма Telegram"));
     else if (type == "authorizationStateReady")
         setPhase("ready", ru("Вход выполнен. Чаты доступны на главном экране."));
-    else if (type == "authorizationStateClosed")
-        fail(ru("Telegram закрыл сессию. Можно запустить движок снова."));
-    else if (type == "authorizationStateClosing" || type == "authorizationStateLoggingOut") {
+    else if (type == "authorizationStateClosed") {
+        if (m_phase == "loggingOut") {
+            // The JSON worker exits after forwarding Closed. Wait for it before
+            // opening the same database with a new TDLib instance.
+            m_restartRequested = true;
+            m_busy = true;
+            m_timer.start(12000);
+        } else
+            fail(ru("Telegram закрыл сессию. Можно запустить движок снова."));
+    } else if (type == "authorizationStateLoggingOut") {
         m_busy = true;
-        setPhase("closing", ru("Telegram закрывает сессию…"));
+        m_timer.start(60000);
+        setPhase("loggingOut", ru("Выход из аккаунта…"));
+    } else if (type == "authorizationStateClosing") {
+        m_busy = true;
         m_timer.start(12000);
+        if (m_phase != "loggingOut")
+            setPhase("closing", ru("Telegram закрывает сессию…"));
     } else if (type == "authorizationStateWaitRegistration")
         setPhase("unsupported", ru("Нужна регистрация. Создайте аккаунт в официальном Telegram и повторите вход."));
     else
@@ -559,7 +581,8 @@ void TelegramSession::authorization(const QVariantMap &state)
 
 void TelegramSession::stop()
 {
-    if (m_process.state() == QProcess::NotRunning)
+    if (m_process.state() == QProcess::NotRunning ||
+        m_phase == "loggingOut" || (m_phase == "ready" && m_busy))
         return;
     m_stopping = true;
     m_busy = true;
@@ -633,6 +656,10 @@ void TelegramSession::finished(int code, QProcess::ExitStatus exitStatus)
     while (workerOutput()->bytesAvailable()>0 || m_input.contains('\n')) readOutput();
     m_timer.stop();
     m_pending.clear();
+    if (m_phase == "loggingOut" && m_restartRequested) {
+        QTimer::singleShot(0, this, SLOT(restartAfterClose()));
+        return;
+    }
     m_busy = false;
     if (m_stopping && !m_failed && code == 0 && exitStatus == QProcess::NormalExit)
         setPhase("stopped", ru("Движок остановлен. Сессия сохранена на устройстве."));
@@ -646,7 +673,7 @@ void TelegramSession::finished(int code, QProcess::ExitStatus exitStatus)
 }
 
 void TelegramSession::reconnect(){
-    if(m_restartRequested)return;
+    if(m_restartRequested || m_phase=="loggingOut" || (m_phase=="ready" && m_busy))return;
     m_restartRequested=true;
     if(m_process.state()==QProcess::NotRunning)restartAfterClose();else stop();
 }
@@ -661,11 +688,18 @@ QString TelegramSession::diagnostics() const{
 
 void TelegramSession::timedOut()
 {
+    if (m_phase == "loggingOut" && m_restartRequested) {
+        m_process.kill();
+        return;
+    }
     if (m_stopping || m_failed || m_phase == "closing") {
         m_failed = true;
         m_error = ru("Движок не завершился вовремя и был остановлен принудительно.");
         m_process.kill();
         return;
     }
-    fail(ru("Нет ответа от движка. Сессия закрывается; после остановки можно повторить вход."));
+    if (m_phase == "loggingOut" || (m_phase == "ready" && m_busy))
+        fail(ru("Не удалось дождаться завершения выхода. Проверьте соединение и подключитесь снова."));
+    else
+        fail(ru("Нет ответа от движка. Сессия закрывается; после остановки можно повторить вход."));
 }

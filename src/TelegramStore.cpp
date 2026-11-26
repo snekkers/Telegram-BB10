@@ -1296,6 +1296,7 @@ void TelegramStore::response(const QVariantMap &object, const QVariantMap &pendi
 
 void TelegramStore::consume(const QVariantMap &object)
 {
+    if (m_seenPhase == "loggingOut") return;
     const QString type = object.value("@type").toString();
     if (type == "updateConnectionState") {
         QString state = object.value("state").toMap().value("@type").toString();

@@ -40,6 +40,8 @@ else:
     state("WaitTdlibParameters")
 
 parameter_attempts = 0
+logout_attempts = 0
+logged_out = scenario_path.with_suffix(".logged-out")
 for line in sys.stdin:
     query = json.loads(line)
     kind = query["@type"]
@@ -64,6 +66,8 @@ for line in sys.stdin:
             state("WaitRegistration")
         elif scenario == "premium":
             state("WaitPremiumPurchase")
+        elif scenario == "logout" and not logged_out.exists():
+            state("Ready")
         else:
             state("WaitPhoneNumber")
         # Deliberately stale response after the new state. Must not change it.
@@ -101,6 +105,20 @@ for line in sys.stdin:
         assert query["code"] == {"@type": "emailAddressAuthenticationCode", "code": "12345"}
         state("Ready")
         reply(query)
+    elif kind == "logOut" and scenario == "logout":
+        logout_attempts += 1
+        if logout_attempts == 1:
+            reply(query, "error", code=500, message="private logout error")
+            continue
+        reply(query)
+        time.sleep(0.2)
+        state("LoggingOut")
+        time.sleep(0.2)
+        logged_out.touch()
+        state("Closing")
+        state("Closed")
+        time.sleep(0.2)
+        sys.exit(0)
     else:
         raise AssertionError(kind)
 

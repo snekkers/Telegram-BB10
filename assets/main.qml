@@ -44,6 +44,15 @@ NavigationPane {
                     if(!_telegram.useSavedConfiguration())openLogin()
                 }
             }else if(loginStarted)openLogin()
+        }else if(authPhase==="loggingOut"){
+            while(navigation.top && navigation.top!==chatsPage){
+                var page=navigation.top
+                if(!navigation.remove(page))break
+                releasePage(page)
+            }
+            demo=false
+            setArchive(false)
+            openLogin()
         }else if(authPhase==="phone" || authPhase==="code" || authPhase==="password" || authPhase==="email" || authPhase==="emailCode" || authPhase==="failed" || authPhase==="unsupported")openLogin()
         else if(authPhase==="ready" && navigation.top && navigation.top.objectName==="loginPage")navigation.pop()
     }
@@ -221,7 +230,8 @@ NavigationPane {
     onPushTransitionEnded: {
         if ((page.objectName === "chatPage" || page.objectName === "searchPage" || page.objectName === "contactsPage") && page.focusComposer !== undefined) page.focusComposer();
     }
-    onPopTransitionEnded: {
+    onPopTransitionEnded: releasePage(page)
+    function releasePage(page) {
         if (page.objectName === "chatPage") { page.saveViewState(); if (page.liveChat) _live.closeChat(); else _chat.closeChat(); }
         if (page.objectName === "searchPage") _search.cancel();
         if (page.objectName === "contactsPage") (page.livePage?_live:_chat).cancelContactOpen();

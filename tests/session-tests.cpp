@@ -186,6 +186,42 @@ private slots:
         QTRY_COMPARE(session.phase(), QString("stopped"));
     }
 
+    void logoutRestartsAtPhoneAfterRejectionAndRetry() {
+        QTemporaryDir directory;
+        const QString library = directory.path() + "/libtdjson.so";
+        fixture(library, "logout");
+        const QString data = directory.path() + "/private";
+        TelegramSession session(engine(), library, data);
+        QVERIFY(!session.logOut());
+        session.start();
+        QTRY_COMPARE(session.phase(), QString("parameters"));
+        QVERIFY(session.configureAndRemember("12345", QString(32, 'a')));
+        QTRY_COMPARE(session.phase(), QString("ready"));
+
+        QVERIFY(session.logOut());
+        QVERIFY(session.busy());
+        QVERIFY(!session.logOut());
+        QTRY_VERIFY(!session.busy());
+        QCOMPARE(session.phase(), QString("ready"));
+        QVERIFY(session.errorText().contains("500"));
+        QVERIFY(!session.errorText().contains("private logout error"));
+
+        QVERIFY(session.logOut());
+        QTest::qWait(80);
+        QVERIFY(session.busy());
+        QVERIFY(!session.logOut());
+        QTRY_COMPARE(session.phase(), QString("loggingOut"));
+        QVERIFY(session.busy());
+        QTRY_COMPARE(session.phase(), QString("phone"));
+        QVERIFY(!session.busy());
+        QVERIFY(session.errorText().isEmpty());
+        QVERIFY(session.hasSavedConfiguration());
+        QVERIFY(QFile::exists(data + "/database.key"));
+        QVERIFY(!session.logOut());
+        session.stop();
+        QTRY_COMPARE(session.phase(), QString("stopped"));
+    }
+
     void unsupported_data() {
         QTest::addColumn<QByteArray>("scenario");
         QTest::newRow("registration") << QByteArray("registration");

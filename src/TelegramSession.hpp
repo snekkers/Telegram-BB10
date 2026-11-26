@@ -60,6 +60,7 @@ public:
     Q_INVOKABLE void start();
     Q_INVOKABLE void stop();
     Q_INVOKABLE void reconnect();
+    Q_INVOKABLE bool logOut();
     Q_INVOKABLE void refreshDiagnostics(){emit changed();}
     QString diagnostics() const;
     Q_INVOKABLE bool configure(const QString &apiId, const QString &apiHash);
